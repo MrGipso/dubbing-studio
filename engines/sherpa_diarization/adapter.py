@@ -26,7 +26,8 @@ import soundfile as sf
 from clustering import group_turns
 
 
-MODELS_DIR = Path(__file__).resolve().parent / "models"
+# The app passes a writable data folder; the engine folder itself in a source checkout.
+MODELS_DIR = Path(os.environ.get("DUB_ENGINE_DATA_DIR") or Path(__file__).resolve().parent) / "models"
 RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 SEGMENTATION = {
     "archive": f"{RELEASES}/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",

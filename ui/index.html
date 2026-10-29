@@ -71,6 +71,12 @@
     </aside>
 
     <main class="main">
+      <div id="toolsBanner" class="notice" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+        <span>Не найден ffmpeg: без него программа не сможет прочитать видео и собрать результат.</span>
+        <span class="meta" data-ffmpeg-manual>Установите ffmpeg: brew install ffmpeg (macOS) или sudo apt install ffmpeg (Linux), затем перезапустите программу.</span>
+        <button type="button" class="primary" data-install-ffmpeg data-job-button><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>Скачать ffmpeg</button>
+      </div>
       <!-- ============================== Projects -->
       <section class="view active" data-view="projects">
         <div id="projectsList">

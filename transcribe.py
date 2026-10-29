@@ -1,9 +1,36 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-from faster_whisper import WhisperModel
+
+def add_cuda_libraries():
+    """cuBLAS from the nvidia-cublas-cu12 wheel (the desktop app installs it on NVIDIA machines).
+
+    CTranslate2 ships cuDNN itself but expects cuBLAS from a CUDA Toolkit;
+    most people do not have one installed.
+    """
+    try:
+        import nvidia.cublas
+    except ImportError:
+        return
+    for base in getattr(nvidia.cublas, "__path__", []):
+        for folder in (Path(base) / "bin", Path(base) / "lib"):
+            if folder.is_dir():
+                os.environ["PATH"] = str(folder) + os.pathsep + os.environ.get("PATH", "")
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(str(folder))
+                elif sys.platform.startswith("linux"):
+                    import ctypes
+
+                    for library in sorted(folder.glob("libcublas*.so*")):
+                        ctypes.CDLL(str(library), mode=ctypes.RTLD_GLOBAL)
+
+
+add_cuda_libraries()
+
+from faster_whisper import WhisperModel  # noqa: E402
 
 
 def format_srt_time(seconds: float) -> str:
@@ -37,17 +64,34 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     language = None if args.language.lower() in ('auto', '') else args.language
-    compute_type = args.compute_type
-    if args.device == 'cpu' and 'float16' in compute_type:
-        compute_type = 'int8'  # float16 is not supported on CPU
-    model = WhisperModel(args.model, device=args.device, compute_type=compute_type)
-    segments, info = model.transcribe(
-        str(audio_path),
-        language=language,
-        vad_filter=True,
-        beam_size=5,
-        word_timestamps=args.word_timestamps,
-    )
+
+    def start(device, compute_type):
+        if device == 'cpu' and 'float16' in compute_type:
+            compute_type = 'int8'  # float16 is not supported on CPU
+        model = WhisperModel(args.model, device=device, compute_type=compute_type)
+        segments, info = model.transcribe(
+            str(audio_path),
+            language=language,
+            vad_filter=True,
+            beam_size=5,
+            word_timestamps=args.word_timestamps,
+        )
+        first = next(segments, None)  # the GPU is really used here: fail early, not mid-file
+
+        def all_segments():
+            if first is not None:
+                yield first
+            yield from segments
+
+        return all_segments(), info
+
+    try:
+        segments, info = start(args.device, args.compute_type)
+    except (RuntimeError, ValueError, OSError) as exc:
+        if args.device == 'cpu':
+            raise
+        print(f"WARNING: Whisper could not use the GPU ({exc}); recognizing on the CPU, it is slower.", flush=True)
+        segments, info = start('cpu', 'int8')
 
     stem = args.output_prefix.strip() or audio_path.stem
     txt_path = out_dir / f'{stem}.txt'

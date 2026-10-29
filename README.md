@@ -45,7 +45,14 @@
 
 ## Установка
 
-Windows:
+**Windows, проще всего:** скачайте `Dubbing Studio_x.y.z_x64-setup.exe` со
+страницы релизов и запустите. Права администратора не нужны. При первом запуске
+программа сама подготовит Python, распознавание речи и ffmpeg, это около
+полуминуты с быстрым интернетом. Потом она открывается в своём окне, как
+обычное приложение. Проекты лежат в `Документы\Dubbing Studio`. Как устроена
+и собирается десктопная версия: [desktop/README.md](desktop/README.md).
+
+**Windows из исходников:**
 
 ```bash
 winget install --id=astral-sh.uv -e
@@ -239,6 +246,9 @@ python tts_engines.py --engine omnivoice --language en --text "Hello there"
 
 ```
 pipeline_ui.py        локальный сервер интерфейса (127.0.0.1)
+paths.py              где программа хранит данные (рядом с кодом или в папках десктопа)
+tools_setup.py        скачивание ffmpeg
+desktop/              десктопная версия: оболочка Tauri, экран первого запуска, сборка установщика
 ui/                   интерфейс: core.js, projects.js, tools.js, settings.js, i18n.js
 locales/              переводы интерфейса (en.json, ...)
 i18n.py               язык интерфейса и сообщений

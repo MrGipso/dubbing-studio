@@ -25,10 +25,12 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import paths
+
 
 ROOT = Path(__file__).resolve().parent
 PROVIDERS_FILE = ROOT / "config" / "llm_providers.json"
-SECRETS_FILE = ROOT / "config" / "secrets.local.json"
+SECRETS_FILE = paths.CONFIG_DIR / "secrets.local.json"
 API_KEY_ENV = "DUB_LLM_API_KEY"
 DEFAULT_PROVIDER = "lmstudio"
 

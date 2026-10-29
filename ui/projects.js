@@ -149,12 +149,41 @@ newProjectFile.addEventListener("change", () => {
   if (file) createProject(file);
   newProjectFile.value = "";
 });
-enableDrop(newProjectDrop, createProject);
+enableDrop(newProjectDrop, createProject, createProjectFromPath);
+async function createProjectFromPath(path) {
+  newProjectProgress.hidden = false;
+  newProjectProgress.textContent = t("Копирую файл…");
+  try {
+    const data = await postJson("/api/projects/from-path", {
+      path, targets: [newProjectTarget.value], name: fileName(path).replace(/\.[^.]+$/, ""),
+    });
+    try {
+      localStorage.setItem("dub-last-target", newProjectTarget.value);
+    } catch {
+      // not important
+    }
+    showProject(data.project);
+  } catch (error) {
+    notifyError(error);
+  } finally {
+    newProjectProgress.hidden = true;
+  }
+}
+
+async function chooseNewProjectFile() {
+  if (!nativeFiles) {
+    newProjectFile.click();
+    return;
+  }
+  const path = await pickNativeFile("media").catch(notifyError);
+  if (path) await createProjectFromPath(path);
+}
+
 newProjectDrop.addEventListener("click", (event) => {
-  if (!event.target.closest(".new-project-target")) newProjectFile.click();
+  if (!event.target.closest(".new-project-target")) chooseNewProjectFile();
 });
 newProjectDrop.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") newProjectFile.click();
+  if (event.key === "Enter" || event.key === " ") chooseNewProjectFile();
 });
 try {
   const lastTarget = localStorage.getItem("dub-last-target");
@@ -715,6 +744,11 @@ pv.speakerVoices.addEventListener("click", async (event) => {
   if (!speaker || !currentProject) return;
   if (event.target.closest("[data-voice-upload]")) {
     event.preventDefault();
+    if (nativeFiles) {
+      const path = await pickNativeFile("audio").catch(notifyError);
+      if (path) await attachProjectFile("voice", path, speaker).catch(notifyError);
+      return;
+    }
     pv.voiceFileInput.dataset.speaker = speaker;
     pv.voiceFileInput.click();
     return;
@@ -833,7 +867,21 @@ pv.voiceFileInput.addEventListener("change", () => {
   if (file) uploadProjectFile("voice", file, pv.voiceFileInput.dataset.speaker || "S1").catch((error) => notifyError(error));
   pv.voiceFileInput.value = "";
 });
-pv.musicFileBtn.addEventListener("click", () => pv.musicFileInput.click());
+pv.musicFileBtn.addEventListener("click", async () => {
+  if (!nativeFiles) {
+    pv.musicFileInput.click();
+    return;
+  }
+  const path = await pickNativeFile("audio").catch(notifyError);
+  if (path) await attachProjectFile("music", path).catch(notifyError);
+});
+
+// Desktop window: a voice sample or music by path (copied on disk, no upload).
+async function attachProjectFile(kind, path, speaker = "S1") {
+  const data = await postJson(projectUrl(currentProject.id, "attach"), { kind, path, speaker });
+  currentProject = data.project;
+  renderProject();
+}
 pv.musicFileInput.addEventListener("change", () => {
   const file = pv.musicFileInput.files?.[0];
   if (file) uploadProjectFile("music", file).catch((error) => notifyError(error));

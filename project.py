@@ -42,6 +42,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+import paths
 import tts_engines
 from app_settings import llm_script_args, load_settings, progress, stage
 from i18n import tr
@@ -49,7 +50,7 @@ from languages import language_id_for, language_name_for
 
 
 ROOT = Path(__file__).resolve().parent
-PROJECTS_DIR = ROOT / "projects"
+PROJECTS_DIR = paths.PROJECTS_DIR
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
 MP4_FRIENDLY = {".mp4", ".mov", ".m4v"}
@@ -297,7 +298,7 @@ def update_project(directory, changes):
 
 
 def new_project(name, source_name):
-    PROJECTS_DIR.mkdir(exist_ok=True)
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     base = f"{time.strftime('%Y%m%d-%H%M%S')}_{slugify(name or Path(source_name).stem)}"
     directory = PROJECTS_DIR / base
     counter = 2
@@ -398,7 +399,7 @@ def delete_project(directory):
     """Move to projects/.trash instead of deleting, so a click is never fatal."""
     directory = Path(directory)
     trash = PROJECTS_DIR / ".trash"
-    trash.mkdir(exist_ok=True)
+    trash.mkdir(parents=True, exist_ok=True)
     target = trash / directory.name
     if target.exists():
         target = trash / f"{directory.name}_{int(time.time())}"

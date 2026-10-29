@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dubbing Studio</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main class="setup">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>
+      </span>
+      <span>Dubbing Studio</span>
+    </div>
+
+    <section class="card" id="card">
+      <h1 data-text="title"></h1>
+      <p class="lead" data-text="lead"></p>
+
+      <ol class="steps">
+        <li data-step="python"><span class="dot"></span><span><strong data-text="python"></strong><small data-text="pythonHint"></small></span></li>
+        <li data-step="ffmpeg"><span class="dot"></span><span><strong data-text="ffmpeg"></strong><small data-text="ffmpegHint"></small></span></li>
+        <li data-step="start"><span class="dot"></span><span><strong data-text="start"></strong><small data-text="startHint"></small></span></li>
+      </ol>
+
+      <div class="progress"><div class="fill" id="fill"></div></div>
+      <p class="status" id="status"></p>
+
+      <details class="log">
+        <summary data-text="details"></summary>
+        <pre id="log"></pre>
+      </details>
+
+      <div class="actions" id="errorActions" hidden>
+        <button type="button" id="openLogs" class="secondary" data-text="openLogs"></button>
+        <button type="button" id="retry" class="primary" data-text="retry"></button>
+      </div>
+    </section>
+
+    <p class="foot" id="foot"></p>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

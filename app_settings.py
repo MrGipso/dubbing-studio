@@ -6,11 +6,10 @@ UI and the same stage run from the command line pick the same engines.
 
 import json
 import threading
-from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
-CONFIG_DIR = ROOT / "config"
+from paths import CONFIG_DIR
+
 SETTINGS_FILE = CONFIG_DIR / "settings.local.json"
 
 DEFAULT_SETTINGS = {
@@ -82,7 +81,7 @@ def save_settings(update):
                 for engine_id, values in incoming.pop("engines").items():
                     engines.setdefault(engine_id, {}).update(values or {})
             settings[section].update(incoming)
-        CONFIG_DIR.mkdir(exist_ok=True)
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return settings
 

@@ -2475,3 +2475,26 @@ input[type="range"] {
 #voiceTrackPlayer .section-title {
   margin-top: 18px;
 }
+
+/* ---------------------------------------------------------------- notices */
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--amber) 38%, var(--line));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--amber) 9%, var(--panel));
+}
+
+.notice > .icon {
+  color: var(--amber);
+}
+
+.notice .primary {
+  flex: none;
+  margin-left: auto;
+}

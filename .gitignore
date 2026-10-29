@@ -25,3 +25,11 @@ Thumbs.db
 # Resident engine workers (ports, tokens, logs)
 .runtime/
 engines/*/models/
+
+# Desktop build (desktop/prepare.py and cargo)
+desktop/src-tauri/app/
+desktop/src-tauri/binaries/
+desktop/src-tauri/python/
+desktop/src-tauri/.python-stage/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/

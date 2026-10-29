@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import i18n
 import llm_client
+import paths
 import project as projects
 import tts_engines
 from app_settings import llm_script_args, load_settings, save_settings
@@ -26,9 +27,9 @@ from languages import LANGUAGE_NAMES_BY_ID
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
-OUTPUTS_DIR = ROOT / "outputs"
-INPUTS_DIR = ROOT / "inputs"
-CONFIG_DIR = ROOT / "config"
+OUTPUTS_DIR = paths.OUTPUTS_DIR
+INPUTS_DIR = paths.INPUTS_DIR
+CONFIG_DIR = paths.CONFIG_DIR
 
 
 
@@ -356,7 +357,7 @@ def default_output_prefix(path):
 
 
 def unique_input_path(filename, kind):
-    INPUTS_DIR.mkdir(exist_ok=True)
+    INPUTS_DIR.mkdir(parents=True, exist_ok=True)
     original = Path(filename or "audio.wav")
     safe_name = safe_stem(original.name)
     suffix = original.suffix.lower() or ".wav"
@@ -457,7 +458,7 @@ def build_reference_transcribe_command(payload):
         raise ValueError(f"Reference audio was not found: {audio}")
 
     asr = load_settings()["asr"]
-    output_dir = str(payload.get("outputDir") or "outputs")
+    output_dir = str(paths.resolve_output_dir(payload.get("outputDir")))
     output_prefix = f"ref_{default_output_prefix(audio)}"
     command = [
         sys.executable or "python",
@@ -470,12 +471,12 @@ def build_reference_transcribe_command(payload):
         "--output-dir", output_dir,
         "--output-prefix", output_prefix,
     ]
-    txt_path = ROOT / output_dir / (output_prefix + ".txt")
+    txt_path = Path(output_dir) / (output_prefix + ".txt")
     return command, txt_path
 
 
 def list_outputs():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for path in sorted(OUTPUTS_DIR.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
         if not path.is_file():
@@ -493,7 +494,7 @@ def list_outputs():
 
 
 def latest_output_audio():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     audio_suffixes = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
     candidates = [
         path for path in OUTPUTS_DIR.iterdir()
@@ -512,7 +513,7 @@ def latest_output_audio():
 
 
 def latest_translations_json():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     candidates = [
         path for path in OUTPUTS_DIR.glob("*.translations.json")
         if path.is_file()
@@ -524,7 +525,7 @@ def latest_translations_json():
 
 
 def latest_script_jsonl():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     candidates = [
         path for path in OUTPUTS_DIR.glob("*.script.dub.jsonl")
         if ".partial." not in path.name and path.is_file()
@@ -653,7 +654,7 @@ def build_transcription_command(payload):
         "--language", str(payload.get("transcribeLanguage") or "auto"),
         "--device", str(payload.get("transcribeDevice") or asr.get("device") or "cuda"),
         "--compute-type", str(payload.get("transcribeComputeType") or asr.get("computeType") or "float16"),
-        "--output-dir", str(payload.get("transcribeOutputDir") or "outputs"),
+        "--output-dir", str(paths.resolve_output_dir(payload.get("transcribeOutputDir"))),
         "--output-prefix", output_prefix,
     ]
 
@@ -690,7 +691,7 @@ def build_text_translation_command(payload):
     if not targets:
         raise ValueError("Choose at least one target language.")
 
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     fallback_prefix = f"text_{time.strftime('%Y%m%d_%H%M%S')}_{hashlib.sha1(text.encode('utf-8')).hexdigest()[:8]}"
     output_prefix = safe_output_prefix(payload.get("translateOutputPrefix"), fallback_prefix)
     text_file = OUTPUTS_DIR / f"{output_prefix}.source.txt"
@@ -705,7 +706,7 @@ def build_text_translation_command(payload):
         str(payload.get("translateSourceLanguage") or "Russian"),
         *llm_script_args(),
         "--output-dir",
-        str(payload.get("translateOutputDir") or "outputs"),
+        str(paths.resolve_output_dir(payload.get("translateOutputDir"))),
         "--output-prefix",
         output_prefix,
         "--temperature",
@@ -780,7 +781,7 @@ def translation_language_match(item, requested):
 
 
 def create_text_voice_jsonl(payload):
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     voice_source = str(payload.get("translateVoiceSource") or "translation").strip().lower()
     language_id = str(payload.get("translateVoiceLanguage") or "en").strip().lower()
 
@@ -866,7 +867,7 @@ def build_script_prepare_command(payload):
         raise ValueError(f"Script reference audio was not found: {ref_audio}")
     ref_text = str(payload.get("scriptRefText") or "").strip()
 
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     fallback_prefix = f"script_{time.strftime('%Y%m%d_%H%M%S')}_{hashlib.sha1(text.encode('utf-8')).hexdigest()[:8]}"
     output_prefix = safe_output_prefix(payload.get("scriptOutputPrefix"), fallback_prefix)
     text_file = OUTPUTS_DIR / f"{output_prefix}.source.txt"
@@ -885,7 +886,7 @@ def build_script_prepare_command(payload):
         language_id,
         *llm_script_args(),
         "--output-dir",
-        str(payload.get("scriptOutputDir") or "outputs"),
+        str(paths.resolve_output_dir(payload.get("scriptOutputDir"))),
         "--output-prefix",
         output_prefix,
         "--temperature",
@@ -936,8 +937,9 @@ def pump_output(process, on_complete=None):
 JOB_START_LOCK = threading.Lock()
 
 
-def start_job(command, kind, on_complete=None, meta=None):
+def start_job(command, kind, on_complete=None, meta=None, env=None):
     # One lock around check + spawn, so two quick clicks cannot start two jobs.
+    paths.add_tools_to_path()  # ffmpeg the app downloaded since the last job
     with JOB_START_LOCK:
         with JOB.lock:
             if JOB.process is not None and JOB.process.poll() is None:
@@ -946,12 +948,13 @@ def start_job(command, kind, on_complete=None, meta=None):
         process = subprocess.Popen(
             command,
             cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=job_environment(),
+            env={**job_environment(), **(env or {})},
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             start_new_session=os.name != "nt",  # lets Stop kill the whole job on macOS/Linux
         )
@@ -1030,13 +1033,13 @@ def start_engine_install_job(payload):
             raise RuntimeError(f"Install finished but {manifest['name']} is still not available.")
         return {"engine": engine_id, "status": status}
 
-    start_job(command, "engine_install", on_complete=on_complete)
+    start_job(command, "engine_install", on_complete=on_complete, env=tts_engines.install_environment(engine_id))
 
 
 def start_engine_test_job(payload):
     engine_id = str(payload.get("engine") or load_settings()["tts"].get("engine") or "omnivoice")
     tts_engines.load_manifest(engine_id)  # validates the id
-    OUTPUTS_DIR.mkdir(exist_ok=True)
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     output = OUTPUTS_DIR / f"engine_test_{engine_id}_{time.strftime('%H%M%S')}.wav"
     command = [
         sys.executable or "python",
@@ -1227,10 +1230,64 @@ def project_upload(handler, directory, kind, speaker_id="S1"):
         return directory / folder / f"{prefix}_{int(time.time())}{Path(safe_upload_name(name)).suffix}"
 
     saved, _ = receive_upload(handler, destination)
+    return use_project_file(directory, kind, saved, speaker_id)
+
+
+def use_project_file(directory, kind, saved, speaker_id="S1"):
+    """A voice sample or a music file now in the project folder becomes the project's choice."""
     relative = saved.relative_to(directory).as_posix()
     if kind == "voice":
         return projects.update_project(directory, {"speakers": {speaker_id: {"voice": {"mode": "file", "file": relative, "ref_text": ""}}}})
     return projects.update_project(directory, {"mix": {"music_file": relative}})
+
+
+def local_file(value, suffixes, error):
+    """A file chosen in the desktop app's own dialog (a path on this computer, no upload)."""
+    path = Path(str(value or "")).expanduser()
+    if not path.is_file():
+        raise ValueError(tr("Файл не найден: {path}", path=path))
+    if path.suffix.lower() not in suffixes:
+        raise ValueError(error)
+    return path
+
+
+def create_project_from_path(payload):
+    """Desktop app: copy a video from disk into a new project (fast, no upload through the page)."""
+    source = local_file(payload.get("path"), MEDIA_UPLOAD_SUFFIXES,
+                        tr("Нужен видео- или аудиофайл (mp4, mov, mkv, webm, wav, mp3, ...)."))
+    directory = projects.new_project(str(payload.get("name") or source.stem), source.name)
+    try:
+        destination = directory / "source" / safe_upload_name(source.name, "source")
+        shutil.copy2(source, destination)
+        projects.attach_source(directory, destination)
+        changes = {}
+        targets = [str(value).strip() for value in payload.get("targets") or [] if str(value).strip()]
+        if targets:
+            changes.update(targets=targets, active=targets[0])
+        if str(payload.get("speaker_count", "")).strip().isdigit():
+            changes["speaker_count"] = int(payload["speaker_count"])
+        if changes:
+            projects.update_project(directory, changes)
+        return directory
+    except Exception:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+
+
+def attach_project_file(directory, payload):
+    """Desktop app: a voice sample or music chosen by path."""
+    kind = str(payload.get("kind") or "")
+    if kind not in ("voice", "music"):
+        raise ValueError("Unknown file kind.")
+    speaker_id = str(payload.get("speaker") or "S1")
+    if kind == "voice":
+        projects.speaker_or_error(projects.load_project(directory), speaker_id)
+    source = local_file(payload.get("path"), projects.AUDIO_SUFFIXES | projects.VIDEO_SUFFIXES, tr("Нужен аудиофайл."))
+    folder = "voice" if kind == "voice" else "source"
+    prefix = f"voice_{speaker_id.lower()}" if kind == "voice" else kind
+    destination = directory / folder / f"{prefix}_{int(time.time())}{Path(safe_upload_name(source.name)).suffix}"
+    shutil.copy2(source, destination)
+    return use_project_file(directory, kind, destination, speaker_id)
 
 
 def start_project_job(directory, stage_name, ids=None, targets=None):
@@ -1289,6 +1346,10 @@ def handle_project_post(handler, parsed):
         data = create_project_upload(handler)
         json_response(handler, {"ok": True, "project": project_detail(projects.project_dir(data["id"]))})
         return True
+    if parsed.path == "/api/projects/from-path":
+        directory = create_project_from_path(read_json(handler))
+        json_response(handler, {"ok": True, "project": project_detail(directory)})
+        return True
     match = PROJECT_ROUTE.match(parsed.path)
     if not match:
         return False
@@ -1296,6 +1357,8 @@ def handle_project_post(handler, parsed):
     action = match.group(2) or ""
     if action == "update":
         projects.update_project(directory, read_json(handler))
+    elif action == "attach":
+        attach_project_file(directory, read_json(handler))
     elif action == "upload":
         query = parse_qs(parsed.query)
         project_upload(handler, directory, query.get("kind", [""])[0], query.get("speaker", ["S1"])[0])
@@ -1350,6 +1413,8 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "job": JOB.snapshot(),
                     "outputs": list_outputs(),
+                    "tools": tools_state(),
+                    "desktop": DESKTOP,
                 },
             )
         if path == "/api/settings":
@@ -1470,6 +1535,18 @@ class Handler(BaseHTTPRequestHandler):
                 payload = read_json(self)
                 start_clean_wav_job(payload)
                 return json_response(self, {"ok": True, "job": JOB.snapshot()})
+            if parsed.path == "/api/shutdown":
+                # The desktop window was closed: answer first, then stop everything.
+                threading.Thread(target=shutdown_app, daemon=True).start()
+                return json_response(self, {"ok": True})
+            if parsed.path == "/api/tools/ffmpeg":
+                start_job([sys.executable or "python", str(ROOT / "tools_setup.py"), "ffmpeg"], "tools_install",
+                          on_complete=lambda: {"ffmpeg": tools_state(fresh=True)["ffmpeg"]})
+                return json_response(self, {"ok": True, "job": JOB.snapshot()})
+            if parsed.path == "/api/desktop/hello":
+                # The desktop window reports what it can do; useful in the server log.
+                print(f"Desktop window: {json.dumps(read_json(self), ensure_ascii=False)}", flush=True)
+                return json_response(self, {"ok": True})
             if parsed.path == "/api/stop":
                 with JOB.lock:
                     process = JOB.process
@@ -1548,21 +1625,90 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+DESKTOP = bool(os.environ.get("DUB_DESKTOP"))
+SERVER = None
+_TOOLS_CACHE = {"at": 0.0, "state": {}}
+
+
+def tools_state(fresh=False):
+    """Which helper tools are available; checked at most every few seconds."""
+    if fresh or time.time() - _TOOLS_CACHE["at"] > 5:
+        paths.add_tools_to_path()
+        _TOOLS_CACHE.update(at=time.time(), state={
+            "ffmpeg": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+            "ffmpeg_auto": os.name == "nt",  # the app can download it by itself
+        })
+    return _TOOLS_CACHE["state"]
+
+
+def shutdown_app():
+    """Stop the running job, the warm voice model and the server (the desktop window is closing)."""
+    with JOB.lock:
+        process = JOB.process
+    terminate_process_tree(process)
+    try:
+        tts_engines.stop_resident()
+    except Exception as exc:  # noqa: BLE001 - quitting anyway
+        print(f"WARNING: could not stop the voice model: {exc}", flush=True)
+    if SERVER is not None:
+        SERVER.shutdown()
+
+
+def detach_stdin():
+    """Take the desktop window's pipe off the standard input; return a private copy of it.
+
+    Child processes inherit the standard input. On Windows a child that touches
+    a pipe while this process waits in read() on it hangs (synchronous pipe
+    I/O is serialized), so jobs get NUL and only the watcher reads the pipe.
+    """
+    private = os.dup(0)  # new descriptors are not inherited by children
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.close(null)
+    if os.name == "nt":
+        import ctypes
+        import msvcrt
+
+        ctypes.windll.kernel32.SetStdHandle(-10, msvcrt.get_osfhandle(0))  # STD_INPUT_HANDLE
+    return private
+
+
+def watch_stdin(pipe):
+    """The desktop window holds the other end of the pipe; when it closes (or crashes), quit."""
+    try:
+        with os.fdopen(pipe, "rb") as stream:
+            stream.read()
+    finally:
+        shutdown_app()
+
+
 def main():
+    global SERVER
     parser = argparse.ArgumentParser(description="Local UI for the timed translation pipeline.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8768)
+    parser.add_argument("--port", type=int, default=8768, help="0 picks a free port (the desktop app does).")
     parser.add_argument("--open", action="store_true", help="Open the UI in the default browser.")
+    parser.add_argument("--exit-with-stdin", action="store_true", help="Quit when stdin closes (used by the desktop app).")
     args = parser.parse_args()
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
-    url = f"http://{args.host}:{args.port}"
+    paths.add_tools_to_path()
+    SERVER = ThreadingHTTPServer((args.host, args.port), Handler)
+    url = f"http://{args.host}:{SERVER.server_address[1]}"
     print(f"Dubbing Studio: {url}", flush=True)
+    if args.exit_with_stdin:
+        threading.Thread(target=watch_stdin, args=(detach_stdin(),), daemon=True).start()
     if args.open:
         import webbrowser
 
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    server.serve_forever()
+    SERVER.serve_forever()
+    SERVER.server_close()
+    if args.exit_with_stdin:
+        # The stdin watcher is still blocked in read(); finalizing the interpreter
+        # around it can crash on Windows. Everything is stopped already.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":

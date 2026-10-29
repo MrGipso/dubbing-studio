@@ -25,13 +25,14 @@ import threading
 import time
 from pathlib import Path
 
+import paths
 from i18n import tr
 
 
 ROOT = Path(__file__).resolve().parent
 ENGINES_DIR = ROOT / "engines"
 WORKER = ENGINES_DIR / "worker.py"
-SECRETS_FILE = ROOT / "config" / "secrets.local.json"
+SECRETS_FILE = paths.CONFIG_DIR / "secrets.local.json"
 TTS_API_KEY_ENV = "DUB_TTS_API_KEY"
 
 
@@ -92,8 +93,13 @@ def list_engines(include_template=False, kind="tts"):
     return engines
 
 
+def engine_data_dir(engine_id):
+    """Writable folder of an engine (its .venv, engine.local.json, models); the engine folder itself in a checkout."""
+    return paths.engine_data_dir(engine_id) if paths.SEPARATE_DATA else engine_dir(engine_id)
+
+
 def local_overrides(engine_id):
-    path = engine_dir(engine_id) / "engine.local.json"
+    path = engine_data_dir(engine_id) / "engine.local.json"
     if not path.is_file():
         return {}
     try:
@@ -103,7 +109,8 @@ def local_overrides(engine_id):
 
 
 def set_python_override(engine_id, python_path):
-    path = engine_dir(engine_id) / "engine.local.json"
+    path = engine_data_dir(engine_id) / "engine.local.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     data = local_overrides(engine_id)
     if python_path:
         if not Path(python_path).is_file():
@@ -131,7 +138,7 @@ def engine_python(manifest):
         return (override if Path(override).is_file() else None), "override"
     if manifest.get("runtime") == "main":
         return sys.executable, "main"
-    candidate = venv_python(engine_dir(manifest["id"]))
+    candidate = venv_python(engine_data_dir(manifest["id"]))
     return (str(candidate) if candidate.is_file() else None), "venv"
 
 
@@ -167,6 +174,13 @@ def install_command(engine_id):
     if not uv:
         raise EngineError("uv was not found. Install it: https://docs.astral.sh/uv/ (one command), then retry.")
     return [uv, "sync", "--project", str(directory), "--no-install-project"]
+
+
+def install_environment(engine_id):
+    """Environment for install_command: the engine's .venv goes to its data folder, not next to the code."""
+    if not paths.SEPARATE_DATA:
+        return {}
+    return {"UV_PROJECT_ENVIRONMENT": str(engine_data_dir(engine_id) / ".venv")}
 
 
 # --------------------------------------------------------------------------
@@ -206,7 +220,7 @@ def resolve_tts_api_key(engine_id):
 # Worker session
 
 
-RUNTIME_DIR = ROOT / ".runtime"
+RUNTIME_DIR = paths.RUNTIME_DIR
 _SPAWNED_WORKERS = {}  # engine id -> Popen of the resident worker this process started
 
 
@@ -341,6 +355,9 @@ class EngineSession:
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUNBUFFERED"] = "1"
+        data_dir = engine_data_dir(self.engine_id)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        env["DUB_ENGINE_DATA_DIR"] = str(data_dir)  # where an engine may keep downloaded models
         api_key = resolve_tts_api_key(self.engine_id)
         if api_key:
             env[TTS_API_KEY_ENV] = api_key
@@ -397,7 +414,7 @@ class EngineSession:
         import secrets
 
         python, source = self._python()
-        RUNTIME_DIR.mkdir(exist_ok=True)
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         runtime = runtime_file(self.engine_id)
         runtime.unlink(missing_ok=True)
         log_path = RUNTIME_DIR / f"engine_{self.engine_id}.log"

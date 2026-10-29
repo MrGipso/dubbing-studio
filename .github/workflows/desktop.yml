@@ -1,0 +1,42 @@
+# Builds the Windows installer of the desktop app on a version tag (v0.2.0, ...)
+# and attaches it to a draft GitHub release.
+name: Desktop installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Python tests
+        run: uv run python -m unittest discover tests
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Dubbing Studio ${{ github.ref_name }}
+          releaseDraft: true

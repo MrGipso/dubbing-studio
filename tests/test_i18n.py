@@ -19,7 +19,7 @@ import i18n  # noqa: E402
 CYRILLIC = re.compile(r"[А-Яа-яЁё]")
 JS_FILES = ("core.js", "settings.js", "tools.js", "projects.js", "timeline.js")
 # Python files with user-visible messages (prepare_script.py has Russian keywords as data).
-PY_FILES = ("project.py", "tts_engines.py", "pipeline_ui.py", "dub.py", "transcribe.py", "translate_srt.py",
+PY_FILES = ("project.py", "tts_engines.py", "pipeline_ui.py", "dub.py", "transcribe.py", "translate_srt.py", "tools_setup.py",
             "engines/demucs/adapter.py")
 MANIFEST_KEYS = ("name", "description", "license", "install_note", "languages")
 PLACEHOLDER = re.compile(r"\{(\w+)(?::[^}]*)?\}")

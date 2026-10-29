@@ -240,6 +240,7 @@ const JOB_LABELS = {
   wav_clean: "Обработка голоса",
   engine_install: "Установка движка",
   engine_test: "Пробная фраза",
+  tools_install: "Установка ffmpeg",
 };
 
 let lastState = null;
@@ -348,6 +349,60 @@ function onToolUpload(listener) {
   uploadListeners.push(listener);
 }
 
+// ---------------------------------------------------------------- desktop window
+// In the desktop app (Tauri) files come from the system dialog and dropped
+// files arrive as paths, so big videos are copied on disk instead of being
+// uploaded through the page. In a browser everything works as before.
+
+const tauri = window.__TAURI__ || null;
+const nativeFiles = Boolean(tauri?.dialog);
+const nativeDropZones = [];
+
+async function pickNativeFile(kind = "media") {
+  const audio = [...AUDIO_KINDS];
+  const extensions = kind === "audio" ? audio : [...VIDEO_KINDS, ...audio];
+  const result = await tauri.dialog.open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: kind === "audio" ? t("Аудио") : t("Видео и аудио"), extensions }],
+  });
+  return typeof result === "string" ? result : result?.path || "";
+}
+
+function fileName(path) {
+  return String(path || "").split(/[\\/]/).pop() || "";
+}
+
+if (tauri?.webview) {
+  const zoneAt = (position) => {
+    const ratio = window.devicePixelRatio || 1;
+    const element = document.elementFromPoint(position.x / ratio, position.y / ratio);
+    return element && nativeDropZones.find((item) => item.zone.contains(element) && item.zone.offsetParent !== null);
+  };
+  let hovered = null;
+  tauri.webview.getCurrentWebview().onDragDropEvent((event) => {
+    const { type, paths: dropped, position } = event.payload;
+    const item = type === "leave" ? null : zoneAt(position || { x: -1, y: -1 });
+    if (hovered && hovered !== item) hovered.zone.classList.remove("drag-over");
+    hovered = item;
+    if (item && type !== "drop") item.zone.classList.add("drag-over");
+    if (type === "drop" && item) {
+      item.zone.classList.remove("drag-over");
+      hovered = null;
+      const element = document.elementFromPoint(position.x / (window.devicePixelRatio || 1), position.y / (window.devicePixelRatio || 1));
+      if (dropped?.length) Promise.resolve(item.onPath(dropped[0], element)).catch(notifyError);
+    }
+  });
+}
+if (tauri) {
+  postJson("/api/desktop/hello", { dialog: nativeFiles, drops: Boolean(tauri.webview) }).catch(() => {});
+}
+
+function setToolPath(target, path) {
+  field(target).value = path;
+  for (const listener of uploadListeners) listener(target, path);
+}
+
 async function uploadToolFile(file, kind, target) {
   const formData = new FormData();
   formData.append("kind", kind);
@@ -359,8 +414,15 @@ async function uploadToolFile(file, kind, target) {
 }
 
 for (const button of document.querySelectorAll("[data-pick-file]")) {
-  button.addEventListener("click", () => {
-    const input = document.querySelector(`[data-file-input="${button.dataset.pickFile}"]`);
+  button.addEventListener("click", async () => {
+    const kind = button.dataset.pickFile;
+    if (nativeFiles) {
+      const zone = document.querySelector(`[data-drop-kind="${kind}"]`);
+      const path = await pickNativeFile(/video/i.test(kind) ? "media" : "audio").catch(notifyError);
+      if (path && zone?.dataset.target) setToolPath(zone.dataset.target, path);
+      return;
+    }
+    const input = document.querySelector(`[data-file-input="${kind}"]`);
     if (input) {
       input.value = "";
       input.click();
@@ -381,7 +443,9 @@ for (const input of document.querySelectorAll("[data-file-input]")) {
   });
 }
 
-function enableDrop(zone, onFile) {
+// onFile gets a dropped File in a browser; onPath gets a path in the desktop window.
+function enableDrop(zone, onFile, onPath = null) {
+  if (onPath) nativeDropZones.push({ zone, onPath });
   zone.addEventListener("dragenter", (event) => {
     event.preventDefault();
     zone.classList.add("drag-over");
@@ -408,8 +472,28 @@ for (const zone of document.querySelectorAll("[data-drop-kind]")) {
     } catch (error) {
       notifyError(error);
     }
-  });
+  }, (path) => setToolPath(zone.dataset.target, path));
 }
+
+// ---------------------------------------------------------------- helper tools (ffmpeg)
+
+const toolsBanner = document.getElementById("toolsBanner");
+onState((state) => {
+  const tools = state.tools || {};
+  toolsBanner.hidden = tools.ffmpeg !== false;
+  toolsBanner.querySelector("[data-install-ffmpeg]").hidden = !tools.ffmpeg_auto;
+  toolsBanner.querySelector("[data-ffmpeg-manual]").hidden = Boolean(tools.ffmpeg_auto);
+});
+toolsBanner.querySelector("[data-install-ffmpeg]").addEventListener("click", async () => {
+  try {
+    await postJson("/api/tools/ffmpeg");
+    await refreshState();
+    await waitForJobCompletion("tools_install", t("Не удалось установить ffmpeg. Подробности в логе."));
+    toast(t("ffmpeg установлен."), "ok");
+  } catch (error) {
+    notifyError(error);
+  }
+});
 
 setInterval(() => {
   refreshState().catch(() => {});
