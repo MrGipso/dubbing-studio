@@ -18,22 +18,55 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7.5 5v14M16.5 5v14M3 9.5h4.5M3 14.5h4.5M16.5 9.5H21M16.5 14.5H21"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.6-6.8c.6-.4.6-1.4 0-1.8L9.6 4.3C8.9 3.9 8 4.4 8 5.2z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect fill="currentColor" stroke="none" x="6" y="5" width="4" height="14" rx="1.2"/><rect fill="currentColor" stroke="none" x="14" y="5" width="4" height="14" rx="1.2"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect fill="currentColor" stroke="none" x="6" y="6" width="12" height="12" rx="2.2"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.6"/><circle cx="6" cy="17" r="2.6"/><path d="M8.2 8.6 20 18M8.2 15.4 20 6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2h7.2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V5h5v2M6.5 7l.9 12.2a1 1 0 0 0 1 .8h7.2a1 1 0 0 0 1-.8L17.5 7"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 4l1.6 4.4L17 10l-4.4 1.6L11 16l-1.6-4.4L5 10l4.4-1.6z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h1.5M7 8.5v7M11 5v14M15 8v8M19 10v4M21.5 12H20"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.3"/><path d="M3.5 19.5c.4-3.2 2.6-5.3 5.5-5.3s5.1 2.1 5.5 5.3"/><path d="M15.5 5.5a3.2 3.2 0 0 1 0 6.2M17.5 14.6c1.7.7 2.8 2.4 3 4.9"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5s1.1-6.1 3.4-8.5z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5h4l10-10-4-4-10 10z"/><path d="M13 7l4 4"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  </svg>
   <div class="app">
     <aside class="rail">
-      <div class="brand">Dubbing Studio</div>
+      <div class="brand"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-logo"></use></svg></span><span>Dubbing Studio</span></div>
       <nav class="rail-nav" aria-label="Разделы">
-        <button type="button" class="rail-item active" data-view="projects">Проекты</button>
-        <button type="button" class="rail-item" data-view="tools">Инструменты</button>
-        <button type="button" class="rail-item" data-view="settings">Настройки</button>
+        <button type="button" class="rail-item active" data-view="projects"><svg class="icon" aria-hidden="true"><use href="#i-film"></use></svg>Проекты</button>
+        <button type="button" class="rail-item" data-view="tools"><svg class="icon" aria-hidden="true"><use href="#i-grid"></use></svg>Инструменты</button>
+        <button type="button" class="rail-item" data-view="settings"><svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>Настройки</button>
       </nav>
       <div class="rail-foot">
         <button type="button" id="llmBadge" class="badge neutral badge-btn" data-open-engines title="Модель перевода">Перевод</button>
         <button type="button" id="ttsBadge" class="badge neutral badge-btn" data-open-engines title="Движок озвучки">Озвучка</button>
-        <select id="uiLanguage" class="language-switch" translate="no" aria-label="Язык интерфейса / Interface language" hidden></select>
-        <button type="button" id="themeToggle" class="theme-toggle" aria-label="Переключить тему" aria-pressed="false">
-          <span class="theme-toggle-track" aria-hidden="true"><span></span></span>
-          <span id="themeLabel">Тема</span>
-        </button>
+        <div class="rail-prefs">
+          <select id="uiLanguage" class="language-switch" translate="no" aria-label="Язык интерфейса / Interface language" hidden></select>
+          <button type="button" id="themeToggle" class="theme-toggle" aria-label="Переключить тему" title="Переключить тему" aria-pressed="false">
+            <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun"></use></svg><svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon"></use></svg><span id="themeLabel" class="sr-only">Тема</span>
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -50,6 +83,7 @@
 
           <div class="new-project drop-zone" id="newProjectDrop" role="button" tabindex="0">
             <input type="file" id="newProjectFile" class="file-input" accept="video/*,audio/*,.mp4,.mov,.mkv,.webm,.avi,.m4v,.wav,.mp3,.m4a,.flac,.ogg">
+            <span class="new-project-icon"><svg class="icon" aria-hidden="true"><use href="#i-upload"></use></svg></span>
             <strong>Новый дубляж</strong>
             <span>Перетащите сюда видео или аудио, или нажмите, чтобы выбрать файл</span>
             <span class="new-project-target">Перевести на
@@ -90,12 +124,12 @@
         <div id="projectView" hidden>
           <div class="view-head">
             <div class="project-title">
-              <button type="button" id="backToProjects" class="text-btn">← Проекты</button>
+              <button type="button" id="backToProjects" class="text-btn"><svg class="icon" aria-hidden="true"><use href="#i-left"></use></svg>Проекты</button>
               <input id="projectName" class="project-name" aria-label="Название проекта">
               <p id="projectSource" class="muted"></p>
             </div>
             <div class="actions">
-              <button type="button" id="projectOpenFolder" class="secondary">Открыть папку</button>
+              <button type="button" id="projectOpenFolder" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-folder"></use></svg>Открыть папку</button>
             </div>
           </div>
 
@@ -203,8 +237,8 @@
                   <button type="button" class="text-btn" data-open-engines>Изменить</button>
                 </div>
                 <div class="actions">
-                  <button type="button" class="primary" id="prepareBtn" data-run-stage="prepare" data-job-button>▶ Распознать и перевести</button>
-                  <button type="button" class="secondary" data-run-stage="all" data-job-button>Сделать всё сразу</button>
+                  <button type="button" class="primary" id="prepareBtn" data-run-stage="prepare" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg>Распознать и перевести</button>
+                  <button type="button" class="secondary" data-run-stage="all" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>Сделать всё сразу</button>
                 </div>
                 <p id="prepareSummary" class="hint"></p>
               </div>
@@ -244,7 +278,7 @@
             </details>
 
             <div class="actions">
-              <button type="button" class="primary" data-run-stage="voice" data-job-button>▶ Озвучить</button>
+              <button type="button" class="primary" data-run-stage="voice" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-wave"></use></svg>Озвучить</button>
             </div>
             <div id="voiceTrackPlayer"></div>
           </section>
@@ -253,18 +287,46 @@
             <div class="review-toolbar">
               <p id="reviewSummary" class="hint"></p>
               <div class="actions">
-                <button type="button" class="secondary" id="shortenLongBtn" data-job-button>✂ Сократить длинные</button>
-                <button type="button" class="primary" id="revoiceDirtyBtn" data-job-button>▶ Переозвучить изменённые</button>
+                <button type="button" class="secondary" id="shortenLongBtn" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-scissors"></use></svg>Сократить длинные</button>
+                <button type="button" class="primary" id="revoiceDirtyBtn" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Переозвучить изменённые</button>
               </div>
             </div>
-            <p class="hint">Правьте перевод прямо в таблице, изменения сохраняются сами. «▶ оригинал» проигрывает фразу из ролика, «▶ озвучка» — как она звучит сейчас. После правок нажмите «Переозвучить изменённые»: заново озвучатся только они, и ролик пересоберётся.</p>
+            <div id="timeline" class="timeline" hidden>
+              <div class="timeline-bar">
+                <button type="button" class="icon-btn" data-tl-play aria-label="Воспроизвести" title="Воспроизвести"><svg class="icon tl-icon-play" aria-hidden="true"><use href="#i-play"></use></svg><svg class="icon tl-icon-pause" aria-hidden="true"><use href="#i-pause"></use></svg></button>
+                <span class="timeline-time" data-tl-time>0:00</span>
+                <div class="segmented" data-tl-source>
+                  <button type="button" data-source="original" class="active">Оригинал</button>
+                  <button type="button" data-source="dub">Озвучка</button>
+                </div>
+                <span class="timeline-legend" data-tl-legend></span>
+                <span class="timeline-zoom">
+                  <button type="button" class="icon-btn mini" data-tl-zoom="-1" aria-label="Мельче" title="Мельче"><svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg></button>
+                  <button type="button" class="icon-btn mini" data-tl-zoom="1" aria-label="Крупнее" title="Крупнее"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg></button>
+                </span>
+              </div>
+              <div class="timeline-scroll" data-tl-scroll>
+                <div class="timeline-track" data-tl-track>
+                  <canvas class="timeline-wave" data-tl-wave></canvas>
+                  <div class="timeline-blocks" data-tl-blocks></div>
+                  <div class="timeline-head" data-tl-head></div>
+                </div>
+              </div>
+            </div>
+            <p class="hint">Фразы на шкале окрашены по говорящему, рамка показывает, как фраза легла в тайминг. Клик по фразе находит её в таблице и проигрывает. Перевод правится прямо в таблице, изменения сохраняются сами; после правок нажмите «Переозвучить изменённые» — заново озвучатся только они, и ролик пересоберётся.</p>
             <div id="segmentsTable" class="segments"></div>
             <audio id="phrasePlayer" preload="none" hidden></audio>
           </section>
 
           <section class="panel step-pane" data-pane="result">
             <div class="pane-grid">
-              <div id="resultPlayer" class="media-box"></div>
+              <div class="result-media">
+                <div class="segmented result-switch" id="resultSwitch" hidden>
+                  <button type="button" data-source="dub" class="active">Дубляж</button>
+                  <button type="button" data-source="original">Оригинал</button>
+                </div>
+                <div id="resultPlayer" class="media-box"></div>
+              </div>
               <div>
                 <div class="mix-grid">
                   <span>Голос</span><input type="range" id="mixVoice" min="0" max="1.5" step="0.05"><output id="mixVoiceOut"></output>
@@ -273,7 +335,7 @@
                 </div>
                 <p id="backgroundHint" class="hint" hidden>Фона нет: при подготовке голос не отделялся от фона.</p>
                 <div class="input-action">
-                  <button type="button" class="secondary" id="musicFileBtn">Добавить музыку</button>
+                  <button type="button" class="secondary" id="musicFileBtn"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>Добавить музыку</button>
                   <input type="file" id="musicFileInput" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
                   <span id="musicFileInfo" class="meta"></span>
                 </div>
@@ -282,7 +344,7 @@
                   <span>Выровнять громкость (−16 LUFS, как на YouTube)</span>
                 </label>
                 <div class="actions">
-                  <button type="button" class="primary" data-run-stage="export" data-job-button>▶ Собрать</button>
+                  <button type="button" class="primary" data-run-stage="export" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-film"></use></svg>Собрать</button>
                 </div>
                 <div id="downloads" class="downloads"></div>
               </div>
@@ -316,14 +378,14 @@
         <form id="translationForm" class="panel controls">
           <div class="panel-head">
             <h2>Перевод</h2>
-            <button type="button" id="translationRefreshBtn" class="secondary">Обновить</button>
+            <button type="button" id="translationRefreshBtn" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Обновить</button>
           </div>
 
           <div class="form-section form-section-strong">
             <div class="section-title">Референс голоса</div>
 
             <label class="field wide">
-              <span>Reference audio</span>
+              <span>Образец голоса</span>
               <div class="input-action drop-zone" data-drop-kind="translateReference" data-target="translateRefAudio">
                 <input name="translateRefAudio" placeholder="Референс голоса для будущей озвучки" autocomplete="off">
                 <button type="button" class="secondary" data-pick-file="translateReference">Выбрать</button>
@@ -333,7 +395,7 @@
 
             <label class="field wide">
               <span class="label-action">
-                <span>Reference text</span>
+                <span>Текст образца</span>
                 <button type="button" id="transcribeTranslateRefBtn" class="text-btn" data-job-button>Транскрибировать</button>
               </span>
               <textarea name="translateRefText" rows="2" placeholder="Текст, который произнесен в референсе"></textarea>
@@ -412,17 +474,17 @@
             </div>
 
             <div class="actions">
-              <button type="button" id="translationBtn" class="primary" data-job-button>▶ Перевести</button>
+              <button type="button" id="translationBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-globe"></use></svg>Перевести</button>
             </div>
           </div>
 
           <details class="accordion">
             <summary>Настройки перевода</summary>
-            <p class="hint">Модель перевода общая для всех вкладок: <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</p>
+            <p class="hint">Модель перевода общая для всех вкладок: <button type="button" class="text-btn" data-open-engines><svg class="icon small" aria-hidden="true"><use href="#i-sliders"></use></svg>Движки</button>.</p>
 
             <div class="row compact-row">
               <label class="field">
-                <span>Temperature</span>
+                <span>Температура</span>
                 <input name="translateTemperature" type="number" min="0" max="1" step="0.05" value="0.2">
               </label>
             </div>
@@ -453,7 +515,7 @@
 
             <label class="field wide" data-voice-source-field="translation">
               <span class="label-action">
-                <span>Translations JSON</span>
+                <span>Готовый перевод (.translations.json)</span>
                 <button type="button" id="useLatestTranslationsBtn" class="text-btn">Latest translations</button>
               </span>
               <input name="translateVoiceJson" placeholder="Подставится сам после перевода" autocomplete="off">
@@ -496,20 +558,20 @@
                 </select>
               </label>
               <label class="field">
-                <span>Speed</span>
+                <span>Скорость речи</span>
                 <input name="translateVoiceSpeed" type="number" min="0.5" max="1.5" step="0.05" value="1.0">
               </label>
             </div>
 
             <div class="actions">
-              <button type="button" id="translationVoiceBtn" class="primary" data-job-button>▶ Сгенерировать WAV</button>
+              <button type="button" id="translationVoiceBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-wave"></use></svg>Сгенерировать WAV</button>
             </div>
           </div>
 
           <details class="accordion">
             <summary>Настройки озвучки</summary>
 
-            <p class="hint">Движок и его качество задаются на вкладке <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</p>
+            <p class="hint">Движок и его качество задаются на вкладке <button type="button" class="text-btn" data-open-engines><svg class="icon small" aria-hidden="true"><use href="#i-sliders"></use></svg>Движки</button>.</p>
 
             <div class="row">
               <label class="field">
@@ -523,18 +585,18 @@
             </div>
 
             <label class="field wide">
-              <span>Output WAV</span>
+              <span>Итоговый WAV</span>
               <input name="translateVoiceOutput" placeholder="Auto: translation name + language + .voice.wav" autocomplete="off">
             </label>
 
             <label class="field wide">
-              <span>Output prefix</span>
+              <span>Префикс файлов</span>
               <input name="translateVoiceOutputPrefix" placeholder="Auto: translation name" autocomplete="off">
             </label>
 
             <label class="inline-check">
               <input type="checkbox" name="translateVoiceAutoFit" checked>
-              <span>Auto Fit</span>
+              <span>Подгонка под тайминг</span>
             </label>
 
             <div class="form-section compact-section">
@@ -553,13 +615,13 @@
                   </select>
                 </label>
                 <label class="field">
-                  <span>Fade ms</span>
+                  <span>Затухание, мс</span>
                   <input name="translateVoicePostFadeMs" type="number" min="0" max="250" step="5" value="40">
                 </label>
               </div>
               <div class="row">
                 <label class="field">
-                  <span>Min pause</span>
+                  <span>Мин. пауза, с</span>
                   <input name="translateVoicePostMinPause" type="number" min="0.03" max="2" step="0.01" value="0.15">
                 </label>
                 <label class="inline-check boxed-check">
@@ -571,7 +633,7 @@
 
             <label class="inline-check">
               <input type="checkbox" name="translateVoiceKeepSegments">
-              <span>Keep segment WAV files</span>
+              <span>Сохранить WAV каждой фразы</span>
             </label>
           </details>
         </form>
@@ -598,14 +660,14 @@
         <form id="scriptForm" class="panel controls">
           <div class="panel-head">
             <h2>Сценарий</h2>
-            <button type="button" id="scriptRefreshBtn" class="secondary">Обновить</button>
+            <button type="button" id="scriptRefreshBtn" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Обновить</button>
           </div>
 
           <div class="form-section form-section-strong">
             <div class="section-title">Референс голоса</div>
 
             <label class="field wide">
-              <span>Reference audio</span>
+              <span>Образец голоса</span>
               <div class="input-action drop-zone" data-drop-kind="scriptReference" data-target="scriptRefAudio">
                 <input name="scriptRefAudio" placeholder="Референс голоса для сценарной озвучки" autocomplete="off">
                 <button type="button" class="secondary" data-pick-file="scriptReference">Выбрать</button>
@@ -615,7 +677,7 @@
 
             <label class="field wide">
               <span class="label-action">
-                <span>Reference text</span>
+                <span>Текст образца</span>
                 <button type="button" id="transcribeScriptRefBtn" class="text-btn" data-job-button>Транскрибировать</button>
               </span>
               <textarea name="scriptRefText" rows="2" placeholder="Текст, который произнесен в референсе"></textarea>
@@ -662,7 +724,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Output prefix</span>
+                <span>Префикс файлов</span>
                 <input name="scriptOutputPrefix" placeholder="Auto: script + timestamp" autocomplete="off">
               </label>
             </div>
@@ -671,17 +733,17 @@
             <input type="hidden" name="scriptOutputDir" value="outputs">
 
             <div class="actions">
-              <button type="button" id="scriptPrepareBtn" class="primary" data-job-button>▶ Подготовить</button>
+              <button type="button" id="scriptPrepareBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>Подготовить</button>
             </div>
           </div>
 
           <details class="accordion">
             <summary>Настройки подготовки</summary>
-            <p class="hint">Модель общая для всех вкладок: <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</p>
+            <p class="hint">Модель общая для всех вкладок: <button type="button" class="text-btn" data-open-engines><svg class="icon small" aria-hidden="true"><use href="#i-sliders"></use></svg>Движки</button>.</p>
 
             <div class="row compact-row">
               <label class="field">
-                <span>Temperature</span>
+                <span>Температура</span>
                 <input name="scriptTemperature" type="number" min="0" max="1" step="0.05" value="0.4">
               </label>
             </div>
@@ -715,7 +777,7 @@
             </div>
 
             <div class="actions">
-              <button type="button" id="scriptVoiceBtn" class="primary" data-job-button>▶ Озвучить сценарий</button>
+              <button type="button" id="scriptVoiceBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-wave"></use></svg>Озвучить сценарий</button>
             </div>
           </div>
 
@@ -724,23 +786,23 @@
 
             <div class="row">
               <label class="field">
-                <span>Tail room</span>
+                <span>Запас на окончание, с</span>
                 <input name="scriptVoiceTailRoom" type="number" min="0" max="3" step="0.05" value="0.8">
               </label>
               <label class="field">
-                <span>Max auto speed</span>
+                <span>Макс. ускорение</span>
                 <input name="scriptVoiceMaxAutoSpeed" type="number" min="1" max="1.5" step="0.01" value="1.18">
               </label>
             </div>
 
             <label class="field wide">
-              <span>Output WAV</span>
+              <span>Итоговый WAV</span>
               <input name="scriptVoiceOutput" placeholder="Auto: script name + .dub.wav" autocomplete="off">
             </label>
 
             <label class="inline-check">
               <input type="checkbox" name="scriptVoiceAutoFit" checked>
-              <span>Auto Fit</span>
+              <span>Подгонка под тайминг</span>
             </label>
 
             <label class="inline-check" title="Не навязывать модели расчётную длительность сегмента: убирает посторонние звуки и оборванные слова в длинных паузах.">
@@ -764,13 +826,13 @@
                   </select>
                 </label>
                 <label class="field">
-                  <span>Fade ms</span>
+                  <span>Затухание, мс</span>
                   <input name="scriptVoicePostFadeMs" type="number" min="0" max="250" step="5" value="40">
                 </label>
               </div>
               <div class="row">
                 <label class="field">
-                  <span>Min pause</span>
+                  <span>Мин. пауза, с</span>
                   <input name="scriptVoicePostMinPause" type="number" min="0.03" max="2" step="0.01" value="0.15">
                 </label>
                 <label class="inline-check boxed-check">
@@ -782,7 +844,7 @@
 
             <label class="inline-check">
               <input type="checkbox" name="scriptVoiceKeepSegments">
-              <span>Keep segment WAV files</span>
+              <span>Сохранить WAV каждой фразы</span>
             </label>
           </details>
         </form>
@@ -809,7 +871,7 @@
         <form id="transcriptionForm" class="panel controls">
           <div class="panel-head">
             <h2>Транскрибация</h2>
-            <button type="button" id="transcriptionRefreshBtn" class="secondary">Обновить</button>
+            <button type="button" id="transcriptionRefreshBtn" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Обновить</button>
           </div>
 
           <label class="field wide">
@@ -849,14 +911,14 @@
 
           <div class="row">
             <label class="field">
-              <span>Device</span>
+              <span>Устройство</span>
               <select name="transcribeDevice">
                 <option>cuda</option>
                 <option>cpu</option>
               </select>
             </label>
             <label class="field">
-              <span>Compute</span>
+              <span>Точность</span>
               <select name="transcribeComputeType">
                 <option>float16</option>
                 <option>int8_float16</option>
@@ -867,7 +929,7 @@
           </div>
 
           <label class="field wide">
-            <span>Output prefix</span>
+            <span>Префикс файлов</span>
             <input name="transcribeOutputPrefix" placeholder="Auto: hash + filename" autocomplete="off">
           </label>
 
@@ -875,11 +937,11 @@
 
           <label class="inline-check">
             <input type="checkbox" name="keepExtractedAudio">
-            <span>Keep extracted video WAV</span>
+            <span>Сохранить WAV из видео</span>
           </label>
 
           <div class="actions">
-            <button type="button" id="transcriptionBtn" class="primary" data-job-button>▶ Транскрибировать</button>
+            <button type="button" id="transcriptionBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-mic"></use></svg>Транскрибировать</button>
             <button type="button" id="clearTranscriptionBtn" class="secondary">Очистить</button>
           </div>
         </form>
@@ -906,7 +968,7 @@
         <form id="cleanForm" class="panel controls">
           <div class="panel-head">
             <h2>Обработка WAV</h2>
-            <button type="button" id="cleanRefreshBtn" class="icon-btn" title="Обновить">↻</button>
+            <button type="button" id="cleanRefreshBtn" class="icon-btn" title="Обновить" aria-label="Обновить"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg></button>
           </div>
 
           <label class="field wide">
@@ -1083,11 +1145,11 @@
           </div>
 
           <label class="field wide">
-            <span>Output WAV</span>
+            <span>Итоговый WAV</span>
             <input name="cleanWavOutput" placeholder="Auto: source name + .clean.wav" autocomplete="off">
           </label>
 
-          <button type="button" id="cleanWavBtn" class="primary" data-job-button>▶ Обработать WAV</button>
+          <button type="button" id="cleanWavBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>Обработать WAV</button>
         </form>
 
         <section class="panel compare-panel">
@@ -1158,13 +1220,13 @@
           </label>
 
           <label class="field wide">
-            <span>Output WAV</span>
+            <span>Итоговый WAV</span>
             <input name="musicOutput" placeholder="Auto: voice name + .music.wav" autocomplete="off">
           </label>
 
           <div class="actions">
-            <button type="button" id="musicMixBtn" class="primary" data-job-button>▶ Смешать с музыкой</button>
-            <button type="button" id="musicRefreshBtn" class="secondary">Обновить</button>
+            <button type="button" id="musicMixBtn" class="primary" data-job-button><svg class="icon" aria-hidden="true"><use href="#i-wave"></use></svg>Смешать с музыкой</button>
+            <button type="button" id="musicRefreshBtn" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>Обновить</button>
           </div>
         </form>
 
@@ -1320,7 +1382,7 @@
     <div class="job-bar-text"><strong id="jobBarStage"></strong> <span id="jobBarDetail" class="muted"></span></div>
     <div class="job-bar-track"><div id="jobBarFill" class="job-bar-fill"></div></div>
     <span id="jobBarTime" class="muted">00:00</span>
-    <button type="button" id="stopBtn" class="danger">■ Стоп</button>
+    <button type="button" id="stopBtn" class="danger"><svg class="icon" aria-hidden="true"><use href="#i-stop"></use></svg>Стоп</button>
   </div>
 
   <dialog id="previewDialog">
@@ -1337,5 +1399,6 @@
   <script src="/settings.js"></script>
   <script src="/tools.js"></script>
   <script src="/projects.js"></script>
+  <script src="/timeline.js"></script>
 </body>
 </html>

@@ -73,7 +73,7 @@ function applySettingsPayload(data) {
 
 function scheduleSettingsSave() {
   clearTimeout(settingsSaveTimer);
-  settingsSaveTimer = setTimeout(() => saveEngineSettings().catch((error) => alert(error.message)), 400);
+  settingsSaveTimer = setTimeout(() => saveEngineSettings().catch((error) => notifyError(error)), 400);
 }
 
 async function saveEngineSettings() {
@@ -185,7 +185,7 @@ for (const element of [llmEl.url, llmEl.model, llmEl.context, llmEl.autoLoad, ll
   element.addEventListener("change", scheduleSettingsSave);
 }
 llmEl.url.addEventListener("change", () => refreshLlmModels().catch(() => {}));
-llmEl.refresh.addEventListener("click", () => refreshLlmModels().catch((error) => alert(error.message)));
+llmEl.refresh.addEventListener("click", () => refreshLlmModels().catch((error) => notifyError(error)));
 
 llmEl.saveKey.addEventListener("click", async () => {
   try {
@@ -195,7 +195,7 @@ llmEl.saveKey.addEventListener("click", async () => {
     updateProviderFields();
     refreshLlmModels().catch(() => {});
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -223,7 +223,7 @@ llmEl.unload.addEventListener("click", async () => {
     await postJson("/api/llm/unload", llmFormValues());
     await refreshLlmModels();
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -397,7 +397,7 @@ function createEnginePanel(root, section, listKey) {
             panel.render();
             renderEngineSummaries();
           } catch (error) {
-            alert(error.message);
+            notifyError(error);
           }
         }));
         install.appendChild(pythonRow);
@@ -434,7 +434,7 @@ function createEnginePanel(root, section, listKey) {
               }));
             }
           } catch (error) {
-            alert(error.message);
+            notifyError(error);
           }
         }));
         voicesRow.appendChild(list);
@@ -474,7 +474,7 @@ function createEnginePanel(root, section, listKey) {
         applySettingsPayload(data);
         renderResident();
       } catch (error) {
-        alert(error.message);
+        notifyError(error);
       }
     });
   }
@@ -487,7 +487,7 @@ function createEnginePanel(root, section, listKey) {
         <label class="field wide"><span>Текст</span><input data-test-text></label>
         <label class="field"><span>Язык</span><input data-test-language placeholder="ru, en, de, ..."></label>
       </div>
-      <div class="actions"><button type="button" class="primary" data-test-run data-job-button>▶ Озвучить пробную фразу</button></div>
+      <div class="actions"><button type="button" class="primary" data-test-run data-job-button>${icon("play")}${t("Озвучить пробную фразу")}</button></div>
       <audio data-test-player controls preload="none" hidden></audio>
     `;
     body.appendChild(test);
@@ -511,7 +511,7 @@ function createEnginePanel(root, section, listKey) {
         }
         await loadEngineSettings();  // the engine is warm now
       } catch (error) {
-        alert(error.message);
+        notifyError(error);
       }
     });
   }
@@ -533,13 +533,14 @@ const enginePanels = [
 
 async function installEngine(engineId, engine) {
   const question = t("Установить «{name}»?", { name: engine?.name || engineId });
-  if (!confirm(`${question}\n\n${engine?.install_note || ""}\n\n${t("Прогресс будет в логе внизу страницы.")}`)) return;
+  const details = `${question}\n\n${engine?.install_note || ""}\n\n${t("Прогресс будет в логе внизу страницы.")}`;
+  if (!(await askConfirm(details, { ok: t("Установить") }))) return;
   try {
     await postJson("/api/engines/install", { engine: engineId });
     await refreshState();
     await waitForJobCompletion("engine_install", t("Установка не удалась. Подробности в логе."));
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   } finally {
     await loadEngineSettings();
   }

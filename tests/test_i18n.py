@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 import i18n  # noqa: E402
 
 CYRILLIC = re.compile(r"[А-Яа-яЁё]")
-JS_FILES = ("core.js", "settings.js", "tools.js", "projects.js")
+JS_FILES = ("core.js", "settings.js", "tools.js", "projects.js", "timeline.js")
 # Python files with user-visible messages (prepare_script.py has Russian keywords as data).
 PY_FILES = ("project.py", "tts_engines.py", "pipeline_ui.py", "dub.py", "transcribe.py", "translate_srt.py",
             "engines/demucs/adapter.py")

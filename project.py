@@ -325,7 +325,24 @@ def attach_source(directory, source_path):
         **info,
     }
     save_project(directory, data)
+    make_thumbnail(directory, data)
     return load_project(directory)
+
+
+def make_thumbnail(directory, data):
+    """A frame of the video for the project card: source/thumb.jpg ("" for audio)."""
+    source = data.get("source") or {}
+    thumb = Path(directory) / "source" / "thumb.jpg"
+    if source.get("has_video") and not thumb.is_file():
+        at = min(60.0, float(source.get("duration") or 0) * 0.3)  # past intros and black frames
+        try:
+            subprocess.run([ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                            "-ss", f"{at:.2f}", "-i", str(Path(directory) / source["file"]),
+                            "-frames:v", "1", "-vf", "thumbnail=60,scale=640:-2", "-q:v", "4", str(thumb)],
+                           capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError, ProjectError):
+            return ""
+    return thumb.relative_to(directory).as_posix() if thumb.is_file() else ""
 
 
 def create_from_file(path, name="", targets=("English",), speaker_count=1):
@@ -351,7 +368,10 @@ def list_projects():
         if not directory.is_dir() or directory.name.startswith((".", "_")) or not (directory / "project.json").is_file():
             continue
         try:
-            projects.append(summary(load_project(directory)))
+            data = load_project(directory)
+            item = summary(data)
+            item["thumb"] = make_thumbnail(directory, data)  # older projects get one on first listing
+            projects.append(item)
         except (OSError, json.JSONDecodeError):
             continue
     projects.sort(key=lambda item: item.get("updated") or 0, reverse=True)
@@ -554,6 +574,31 @@ def cut_reference(source_wav, start, end, destination, margin=0.12, parts=None):
 
 def speech_wav(directory, data):
     return Path(directory) / "work" / ("vocals.wav" if data.get("separated") else "audio.wav")
+
+
+def waveform_peaks(directory, data, bins=2000):
+    """Loudness of the speech track in `bins` steps (0..1) for the timeline; cached in work/peaks.json."""
+    wav = speech_wav(directory, data)
+    if not wav.is_file():
+        return {"duration": 0, "peaks": []}
+    cache = Path(directory) / "work" / "peaks.json"
+    stamp = f"{wav.name}:{wav.stat().st_mtime_ns}:{bins}"
+    if cache.is_file():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if cached.get("stamp") == stamp:
+                return cached
+        except (OSError, ValueError):
+            pass
+    info = sf.info(str(wav))
+    step = max(1, math.ceil(info.frames / bins))
+    peaks = [float(np.max(np.abs(block))) if len(block) else 0.0
+             for block in sf.blocks(str(wav), blocksize=step, dtype="float32", always_2d=True)]
+    loudest = max(peaks, default=0.0) or 1.0
+    result = {"stamp": stamp, "duration": round(info.frames / info.samplerate, 3),
+              "peaks": [round(value / loudest, 3) for value in peaks]}
+    cache.write_text(json.dumps(result), encoding="utf-8")
+    return result
 
 
 def speaker_or_error(data, speaker_id):

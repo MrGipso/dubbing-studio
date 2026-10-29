@@ -1072,6 +1072,11 @@ def project_file_url(project_id, relative):
     return f"/api/projects/{quote(project_id)}/file?path={quote(relative)}" if relative else ""
 
 
+def projects_payload():
+    """Project list for the cards, with a URL of each video frame."""
+    return [dict(item, thumb_url=project_file_url(item["id"], item.get("thumb"))) for item in projects.list_projects()]
+
+
 def project_detail(directory):
     data = projects.load_project(directory)
     project_id = data["id"]
@@ -1265,6 +1270,9 @@ def handle_project_get(handler, parsed):
     if action == "":
         json_response(handler, {"ok": True, "project": project_detail(directory)})
         return True
+    if action == "peaks":
+        json_response(handler, {"ok": True, **projects.waveform_peaks(directory, projects.load_project(directory))})
+        return True
     if action == "file":
         relative = unquote(parse_qs(parsed.query).get("path", [""])[0])
         file_path = (directory / relative).resolve()
@@ -1307,7 +1315,7 @@ def handle_project_post(handler, parsed):
         projects.choose_sample(directory, int(payload.get("index") or 0), str(payload.get("speaker") or "S1"))
     elif action == "delete":
         projects.delete_project(directory)
-        json_response(handler, {"ok": True, "projects": projects.list_projects()})
+        json_response(handler, {"ok": True, "projects": projects_payload()})
         return True
     elif action == "open":
         open_folder(directory / "output")
@@ -1358,7 +1366,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(content)
             return
         if path == "/api/projects":
-            return json_response(self, {"ok": True, "projects": projects.list_projects()})
+            return json_response(self, {"ok": True, "projects": projects_payload()})
         if path.startswith("/api/projects/"):
             try:
                 if handle_project_get(self, parsed):

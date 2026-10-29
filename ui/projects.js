@@ -33,6 +33,7 @@ const pv = {
   voiceTrackPlayer: document.getElementById("voiceTrackPlayer"),
   segments: document.getElementById("segmentsTable"),
   resultPlayer: document.getElementById("resultPlayer"),
+  resultSwitch: document.getElementById("resultSwitch"),
   mixVoice: document.getElementById("mixVoice"),
   mixBackground: document.getElementById("mixBackground"),
   mixMusic: document.getElementById("mixMusic"),
@@ -79,24 +80,35 @@ function renderProjectCards(projects) {
     const card = document.createElement("div");
     card.className = "project-card";
     const state = project.state || {};
-    const chips = STATE_LABELS.map(([key, label]) => `<span class="chip ${state[key] ? "chip-on" : ""}">${t(label)}</span>`).join("");
+    const done = STATE_LABELS.filter(([key]) => state[key]).length;
+    const status = project.error ? `<span class="chip chip-bad">${t("ошибка")}</span>`
+      : `<span class="project-status">${done ? t(STATE_LABELS[done - 1][1]) : t("не начат")}</span>`;
+    const steps = STATE_LABELS.map(([key, label]) => `<span class="${state[key] ? "on" : ""}" title="${t(label)}"></span>`).join("");
+    const thumb = project.thumb_url
+      ? `<img src="${project.thumb_url}" alt="" loading="lazy">`
+      : `<span class="project-thumb-empty">${icon("wave")}</span>`;
+    const languages = (project.targets || []).map((name) => `<span class="chip">${escapeHtml(languageLabel(name))}</span>`).join("");
     card.innerHTML = `
       <button type="button" class="project-open">
-        <strong translate="no">${escapeHtml(project.name || project.id)}</strong>
-        <span class="meta"><span translate="no">${escapeHtml(project.source_name || "")}</span> · ${formatClock(project.duration)} · → ${escapeHtml((project.targets || []).map(languageLabel).join(", "))}${project.speakers > 1 ? ` · ${t("Говорящих: {count}", { count: project.speakers })}` : ""}</span>
-        <span class="chip-row">${chips}${project.error ? `<span class="chip chip-bad">${t("ошибка")}</span>` : ""}</span>
-        <span class="meta">${project.updated ? new Date(project.updated * 1000).toLocaleString() : ""}</span>
+        <span class="project-thumb">${thumb}<span class="project-duration">${formatClock(project.duration)}</span></span>
+        <span class="project-body">
+          <strong translate="no">${escapeHtml(project.name || project.id)}</strong>
+          <span class="chip-row">${languages}${project.speakers > 1 ? `<span class="chip">${icon("users", "small")}${project.speakers}</span>` : ""}</span>
+          <span class="project-progress"><span class="progress-steps">${steps}</span>${status}</span>
+          <span class="meta">${project.updated ? new Date(project.updated * 1000).toLocaleString() : ""}</span>
+        </span>
       </button>
-      <button type="button" class="icon-btn project-delete" title="${t("Удалить в корзину")}">×</button>
+      <button type="button" class="icon-btn project-delete" title="${t("Удалить в корзину")}" aria-label="${t("Удалить в корзину")}">${icon("trash")}</button>
     `;
     card.querySelector(".project-open").addEventListener("click", () => openProject(project.id));
     card.querySelector(".project-delete").addEventListener("click", async () => {
-      if (!confirm(t("Удалить проект «{name}»?\n\nОн переместится в папку projects/.trash, оттуда его можно вернуть.", { name: project.name }))) return;
+      const question = t("Удалить проект «{name}»?\n\nОн переместится в папку projects/.trash, оттуда его можно вернуть.", { name: project.name });
+      if (!(await askConfirm(question, { ok: t("Удалить"), danger: true }))) return;
       try {
         const data = await postJson(projectUrl(project.id, "delete"));
         renderProjectCards(data.projects || []);
       } catch (error) {
-        alert(error.message);
+        notifyError(error);
       }
     });
     projectCardsEl.appendChild(card);
@@ -126,7 +138,7 @@ async function createProject(file) {
     }
     showProject(data.project);
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   } finally {
     newProjectProgress.hidden = true;
   }
@@ -194,7 +206,7 @@ document.getElementById("backToProjects").addEventListener("click", async () => 
 });
 
 document.getElementById("projectOpenFolder").addEventListener("click", () => {
-  if (currentProject) postJson(projectUrl(currentProject.id, "open")).catch((error) => alert(error.message));
+  if (currentProject) postJson(projectUrl(currentProject.id, "open")).catch((error) => notifyError(error));
 });
 
 function mediaElement(file, kind) {
@@ -246,11 +258,11 @@ function renderProject(firstOpen = false) {
   if (p.transcribed && untranslated.length) {
     const languages = untranslated.map((language) => languageLabel(language.name)).join(", ");
     pv.prepareBtn.dataset.runStage = "translate";
-    pv.prepareBtn.textContent = p.diarized ? t("▶ Перевести: {languages}", { languages })
-      : t("▶ Найти говорящих и перевести: {languages}", { languages });
+    setLabel(pv.prepareBtn, "play", p.diarized ? t("Перевести: {languages}", { languages })
+      : t("Найти говорящих и перевести: {languages}", { languages }));
   } else {
     pv.prepareBtn.dataset.runStage = "prepare";
-    pv.prepareBtn.textContent = p.transcribed ? t("▶ Распознать и перевести заново") : t("▶ Распознать и перевести");
+    setLabel(pv.prepareBtn, "play", p.transcribed ? t("Распознать и перевести заново") : t("Распознать и перевести"));
   }
   const detected = { language: p.detected_language || "?", count: segmentsCount };
   const speakersCount = (p.speaker_list || []).length;
@@ -272,6 +284,7 @@ function renderProject(firstOpen = false) {
 
   // Step 3: translation review
   renderSegments(p.segments || [], active.voiced);
+  if (typeof renderTimeline === "function") renderTimeline(p);
 
   // Step 4: result
   const mix = p.mix || {};
@@ -285,8 +298,10 @@ function renderProject(firstOpen = false) {
   updateMixOutputs();
   const resultFile = files.video || files.mix_track;
   const resultKey = resultFile ? `${resultFile.url}|${p.updated}` : "";
+  pv.resultSwitch.hidden = !(active.exported && resultFile && files.source);
   if (pv.resultPlayer.dataset.key !== resultKey) {
     pv.resultPlayer.dataset.key = resultKey;
+    for (const button of pv.resultSwitch.querySelectorAll("[data-source]")) button.classList.toggle("active", button.dataset.source === "dub");
     pv.resultPlayer.innerHTML = active.exported && resultFile
       ? mediaElement(resultFile, files.video ? "video" : "audio")
       : `<div class="media-placeholder">${active.voiced ? t("Нажмите «Собрать», чтобы получить готовый ролик.") : t("Сначала озвучьте перевод (шаг 2).")}</div>`;
@@ -319,9 +334,9 @@ function renderSegments(segments, voiced) {
     : t("Фраз: {count}. Озвучьте перевод на шаге «Голос», чтобы увидеть, как фразы легли в тайминг.", { count: segments.length });
   const shortenBtn = document.getElementById("shortenLongBtn");
   const revoiceBtn = document.getElementById("revoiceDirtyBtn");
-  shortenBtn.textContent = t("✂ Сократить длинные ({count})", { count: longCount });
+  setLabel(shortenBtn, "scissors", t("Сократить длинные ({count})", { count: longCount }));
   shortenBtn.dataset.count = String(longCount);
-  revoiceBtn.textContent = t("▶ Переозвучить изменённые ({count})", { count: dirtyCount });
+  setLabel(revoiceBtn, "refresh", t("Переозвучить изменённые ({count})", { count: dirtyCount }));
   revoiceBtn.dataset.count = String(dirtyCount);
 
   // Never rebuild the table under the user's cursor.
@@ -350,20 +365,23 @@ function renderSegments(segments, voiced) {
       <span class="meta">${formatClock(segment.start)} · ${t("{seconds} с", { seconds: Number(segment.duration || 0).toFixed(1) })}
         ${speakers.length > 1 ? speakerSelect(segment.speaker, speakers) : ""}</span>
       <span class="segment-source"><span translate="no">${escapeHtml(segment.source)}</span>
-        <button type="button" class="text-btn" data-play="source">${t("▶ оригинал")}</button></span>
+        <button type="button" class="text-btn" data-play="source">${icon("play", "small")}${t("оригинал")}</button></span>
       <textarea class="segment-text" rows="2" spellcheck="true">${escapeHtml(segment.translation)}</textarea>
       <span class="segment-actions">
         ${phraseStatus(segment, voiced)}
         <span class="segment-buttons">
-          <button type="button" class="text-btn" data-play="voice" ${segment.voice_url ? "" : "hidden"}>${t("▶ озвучка")}</button>
-          <button type="button" class="text-btn" data-phrase-stage="shorten" data-job-button title="${t("Попросить модель сократить фразу под тайминг")}">${t("✂ сократить")}</button>
-          <button type="button" class="text-btn" data-phrase-stage="revoice" data-job-button title="${t("Переозвучить только эту фразу")}" ${voiced ? "" : "hidden"}>${t("↻ переозвучить")}</button>
+          <button type="button" class="text-btn" data-play="voice" ${segment.voice_url ? "" : "hidden"}>${icon("play", "small")}${t("озвучка")}</button>
+          <button type="button" class="text-btn" data-phrase-stage="shorten" data-job-button title="${t("Попросить модель сократить фразу под тайминг")}">${icon("scissors", "small")}${t("сократить")}</button>
+          <button type="button" class="text-btn" data-phrase-stage="revoice" data-job-button title="${t("Переозвучить только эту фразу")}" ${voiced ? "" : "hidden"}>${icon("refresh", "small")}${t("переозвучить")}</button>
         </span>
       </span>
     `;
     pv.segments.appendChild(row);
   }
   if (lastState?.job) renderJob(lastState.job);  // apply disabled state to the new buttons
+  if (typeof timelineState !== "undefined" && timelineState.selected) {
+    pv.segments.querySelector(`.segment-row[data-id="${CSS.escape(timelineState.selected)}"]`)?.classList.add("segment-focus");
+  }
 }
 
 let phraseSaveTimer = null;
@@ -387,12 +405,12 @@ pv.segments.addEventListener("input", (event) => {
   if (!value) return;
   pendingPhrases[id] = value;
   clearTimeout(phraseSaveTimer);
-  phraseSaveTimer = setTimeout(() => flushPhraseEdits().catch((error) => alert(error.message)), 900);
+  phraseSaveTimer = setTimeout(() => flushPhraseEdits().catch((error) => notifyError(error)), 900);
 });
 pv.segments.addEventListener("focusout", (event) => {
   if (!event.target.closest(".segment-text")) return;
   flushPhraseEdits()
-    .catch((error) => alert(error.message))
+    .catch((error) => notifyError(error))
     .finally(() => {
       if (segmentsPendingRender) renderSegments(currentProject.segments || [], currentProject.state?.voiced);
     });
@@ -446,17 +464,35 @@ pv.segments.addEventListener("click", async (event) => {
 
 document.getElementById("shortenLongBtn").addEventListener("click", async (event) => {
   if (event.currentTarget.dataset.count === "0") {
-    alert(t("Длинных фраз нет: все укладываются в тайминг."));
+    toast(t("Длинных фраз нет: все укладываются в тайминг."), "warn");
     return;
   }
   await runProjectStage("shorten");
 });
 document.getElementById("revoiceDirtyBtn").addEventListener("click", async (event) => {
   if (event.currentTarget.dataset.count === "0") {
-    alert(t("Изменённых фраз нет. Поправьте перевод в таблице или нажмите «✂ сократить» у длинной фразы."));
+    toast(t("Изменённых фраз нет. Поправьте перевод в таблице или нажмите «сократить» у длинной фразы."), "warn");
     return;
   }
   await runProjectStage("revoice");
+});
+
+// Result: listen to the dub and the original at the same moment of the video.
+pv.resultSwitch.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-source]");
+  const media = pv.resultPlayer.querySelector("video, audio");
+  if (!button || !media || !currentProject || button.classList.contains("active")) return;
+  const files = currentProject.files || {};
+  const url = button.dataset.source === "original" ? files.source?.url : (files.video || files.mix_track)?.url;
+  if (!url) return;
+  const time = media.currentTime;
+  const playing = !media.paused;
+  media.src = url;
+  media.addEventListener("loadedmetadata", () => {
+    media.currentTime = time;
+    if (playing) media.play().catch(() => {});
+  }, { once: true });
+  for (const other of pv.resultSwitch.querySelectorAll("[data-source]")) other.classList.toggle("active", other === button);
 });
 
 function renderDownloads(languages) {
@@ -470,7 +506,7 @@ function renderDownloads(languages) {
     const files = language.files || {};
     const links = items
       .filter(([key]) => files[key] && (key === "video" || key === "mix_track" ? language.exported : true))
-      .map(([key, label]) => `<a class="download-link" href="${files[key].url}" download="${escapeHtml(files[key].name)}">${t(label)}<span class="meta" translate="no">${escapeHtml(files[key].name)}</span></a>`)
+      .map(([key, label]) => `<a class="download-link" href="${files[key].url}" download="${escapeHtml(files[key].name)}">${icon("download")}${t(label)}<span class="meta" translate="no">${escapeHtml(files[key].name)}</span></a>`)
       .join("");
     if (!links) return "";
     return `${languages.length > 1 ? `<div class="section-title">${escapeHtml(languageLabel(language.name))}</div>` : ""}${links}`;
@@ -517,12 +553,13 @@ pv.addTarget.addEventListener("change", () => {
   queueProjectChange({ targets: [...(currentProject.targets || []), value] }, true);
 });
 
-pv.targets.addEventListener("click", (event) => {
+pv.targets.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-remove-target]");
   if (!button || !currentProject) return;
   const name = button.dataset.removeTarget;
   const language = (currentProject.languages || []).find((item) => item.name === name);
-  if (language?.translated && !confirm(t("Убрать {language} из проекта? Готовые файлы этого языка останутся в папке проекта.", { language: languageLabel(name) }))) return;
+  if (language?.translated && !(await askConfirm(t("Убрать {language} из проекта? Готовые файлы этого языка останутся в папке проекта.",
+    { language: languageLabel(name) }), { ok: t("Убрать") }))) return;
   queueProjectChange({ targets: (currentProject.targets || []).filter((item) => item !== name) }, true);
 });
 
@@ -538,14 +575,21 @@ function speakerSelect(current, speakers) {
   return `<select class="speaker-select" data-speaker-select translate="no" title="${t("Кто говорит эту фразу")}">${options}</select>`;
 }
 
+const openSpeakers = new Set();  // speakers whose voice choice is expanded
+
 function speakerCard(speaker, index, many) {
   const id = escapeHtml(speaker.id);
   return `
-    <div class="speaker-card" data-speaker="${id}" data-speaker-index="${index % 6}">
+    <div class="speaker-card${many ? " many" : ""}" data-speaker="${id}" data-speaker-index="${index % 6}">
       ${many ? `<div class="speaker-head">
-        <span class="speaker-dot"></span>
-        <input class="speaker-name" data-speaker-name maxlength="60" placeholder="${escapeHtml(t("Говорящий {number}", { number: index + 1 }))}">
-        <span class="meta" data-speaker-stats></span>
+        <span class="speaker-avatar" data-speaker-avatar translate="no"></span>
+        <span class="speaker-title">
+          <input class="speaker-name" data-speaker-name maxlength="60" placeholder="${escapeHtml(t("Говорящий {number}", { number: index + 1 }))}">
+          <span class="meta" data-speaker-stats></span>
+        </span>
+        <span class="speaker-voice" data-speaker-voice></span>
+        <button type="button" class="icon-btn" data-speaker-play title="${t("Послушать образец")}" aria-label="${t("Послушать образец")}">${icon("play")}</button>
+        <button type="button" class="secondary speaker-toggle" data-speaker-toggle>${icon("edit")}<span data-toggle-label></span></button>
       </div>` : ""}
       <div class="voice-modes">
         <label class="voice-mode">
@@ -584,9 +628,9 @@ function sampleBox(speaker) {
   return `${mediaElement(speaker.sample, "audio")}
     <div class="meta" translate="no">${escapeHtml(voice.auto_text || "")}</div>
     ${candidates.length > 1 ? `<div class="sample-switch">
-      <button type="button" class="text-btn" data-sample-step="-1" data-job-button>◀</button>
+      <button type="button" class="icon-btn mini" data-sample-step="-1" data-job-button aria-label="${t("Предыдущий отрывок")}">${icon("left")}</button>
       <span class="meta">${t("Отрывок {index} из {count}", { index: index + 1, count: candidates.length })} · ${where}</span>
-      <button type="button" class="text-btn" data-sample-step="1" data-job-button>▶</button>
+      <button type="button" class="icon-btn mini" data-sample-step="1" data-job-button aria-label="${t("Следующий отрывок")}">${icon("right")}</button>
     </div>` : ""}`;
 }
 
@@ -606,6 +650,15 @@ function renderSpeakers(p) {
     if (name) setIfIdle(name, speaker.name || "");
     const stats = card.querySelector("[data-speaker-stats]");
     if (stats) stats.textContent = speaker.phrases ? t("Фраз: {count} · речь {time}", { count: speaker.phrases, time: formatClock(speaker.seconds) }) : "";
+    if (card.classList.contains("many")) {
+      const index = speakers.indexOf(speaker);
+      card.querySelector("[data-speaker-avatar]").textContent = (speaker.name || "").trim().charAt(0).toUpperCase() || String(index + 1);
+      card.querySelector("[data-speaker-voice]").textContent = voiceSummary(speaker);
+      card.querySelector("[data-speaker-play]").hidden = !speakerSampleUrl(speaker);
+      const open = openSpeakers.has(speaker.id);
+      card.classList.toggle("open", open);
+      card.querySelector("[data-toggle-label]").textContent = open ? t("Свернуть") : t("Изменить");
+    }
     const box = card.querySelector("[data-sample-box]");
     const key = `${speaker.sample?.url}|${voice.auto_index}|${p.updated}`;
     if (box.dataset.key !== key) {
@@ -622,6 +675,24 @@ function renderSpeakers(p) {
     setIfIdle(card.querySelector("[data-voice-id]"), voice.voice_id || "");
   }
   if (lastState?.job) renderJob(lastState.job);  // disabled state of the new sample buttons
+}
+
+function voiceSummary(speaker) {
+  const voice = speaker.voice || {};
+  if (voice.mode === "file") return speaker.uploaded ? t("Свой образец") : t("Свой образец · не загружен");
+  if (voice.mode === "engine") return voice.voice_id ? t("Голос движка: {name}", { name: voice.voice_id }) : t("Голос движка по умолчанию");
+  if (!speaker.sample) return t("Голос оригинала · образца пока нет");
+  const candidates = voice.candidates || [];
+  return candidates.length > 1
+    ? t("Голос оригинала · отрывок {index} из {count}", { index: Number(voice.auto_index || 0) + 1, count: candidates.length })
+    : t("Голос оригинала");
+}
+
+function speakerSampleUrl(speaker) {
+  const mode = speaker.voice?.mode || "original";
+  if (mode === "file") return speaker.uploaded?.url || "";
+  if (mode === "original") return speaker.sample?.url || "";
+  return "";
 }
 
 function speakerOf(element) {
@@ -648,6 +719,18 @@ pv.speakerVoices.addEventListener("click", async (event) => {
     pv.voiceFileInput.click();
     return;
   }
+  const info = (currentProject.speaker_list || []).find((item) => item.id === speaker);
+  if (event.target.closest("[data-speaker-toggle]")) {
+    if (openSpeakers.has(speaker)) openSpeakers.delete(speaker);
+    else openSpeakers.add(speaker);
+    renderSpeakers(currentProject);
+    return;
+  }
+  if (event.target.closest("[data-speaker-play]")) {
+    const url = info && speakerSampleUrl(info);
+    if (url) playPhrase(url);
+    return;
+  }
   const step = event.target.closest("[data-sample-step]");
   if (!step) return;
   event.preventDefault();
@@ -660,7 +743,7 @@ pv.speakerVoices.addEventListener("click", async (event) => {
     currentProject = data.project;
     renderProject();
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -674,7 +757,7 @@ pv.segments.addEventListener("change", async (event) => {
     currentProject = data.project;
     renderProject();
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -699,7 +782,7 @@ function mergeChange(target, value) {
 function queueProjectChange(changes, immediate = false) {
   pendingChanges = mergeChange(pendingChanges, changes);
   clearTimeout(projectSaveTimer);
-  projectSaveTimer = setTimeout(() => flushProjectSave().catch((error) => alert(error.message)), immediate ? 0 : 450);
+  projectSaveTimer = setTimeout(() => flushProjectSave().catch((error) => notifyError(error)), immediate ? 0 : 450);
 }
 
 async function flushProjectSave() {
@@ -715,9 +798,9 @@ async function flushProjectSave() {
 pv.name.addEventListener("change", () => queueProjectChange({ name: pv.name.value.trim() }));
 pv.sourceLanguage.addEventListener("change", () => queueProjectChange({ source_language: pv.sourceLanguage.value }));
 pv.separate.addEventListener("change", () => queueProjectChange({ separate: pv.separate.checked }));
-pv.speakers.addEventListener("change", () => {
+pv.speakers.addEventListener("change", async () => {
   const translated = (currentProject?.languages || []).some((language) => language.translated);
-  if (translated && !confirm(t("Фразы будут заново разделены между говорящими, перевод и озвучка будут сделаны заново. Продолжить?"))) {
+  if (translated && !(await askConfirm(t("Фразы будут заново разделены между говорящими, перевод и озвучка будут сделаны заново. Продолжить?")))) {
     pv.speakers.value = String(currentProject.speaker_count ?? 1);
     return;
   }
@@ -747,13 +830,13 @@ async function uploadProjectFile(kind, file, speaker = "") {
 
 pv.voiceFileInput.addEventListener("change", () => {
   const file = pv.voiceFileInput.files?.[0];
-  if (file) uploadProjectFile("voice", file, pv.voiceFileInput.dataset.speaker || "S1").catch((error) => alert(error.message));
+  if (file) uploadProjectFile("voice", file, pv.voiceFileInput.dataset.speaker || "S1").catch((error) => notifyError(error));
   pv.voiceFileInput.value = "";
 });
 pv.musicFileBtn.addEventListener("click", () => pv.musicFileInput.click());
 pv.musicFileInput.addEventListener("change", () => {
   const file = pv.musicFileInput.files?.[0];
-  if (file) uploadProjectFile("music", file).catch((error) => alert(error.message));
+  if (file) uploadProjectFile("music", file).catch((error) => notifyError(error));
   pv.musicFileInput.value = "";
 });
 
@@ -766,14 +849,14 @@ async function runProjectStage(stage, ids = null) {
     await flushPhraseEdits();
     const editedAnywhere = Object.values(currentProject.tracks || {}).some((track) => (track.edited || []).length);
     if (stage === "prepare" && editedAnywhere) {
-      if (!confirm(t("Перевод будет сделан заново, и ваши правки фраз пропадут. Продолжить?"))) return;
+      if (!(await askConfirm(t("Перевод будет сделан заново, и ваши правки фраз пропадут. Продолжить?")))) return;
     }
     const data = await postJson(projectUrl(currentProject.id, "run"), ids ? { stage, ids } : { stage });
     currentProject = data.project;
     renderProject();
     await refreshState();
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 }
 

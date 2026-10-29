@@ -3,6 +3,7 @@
 import io
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -163,6 +164,27 @@ class ProjectStateTests(TempProjects):
         self.assertEqual(chosen["auto_index"], 1)
         self.assertEqual(chosen["auto_text"], "Три. Четыре.")
         self.assertAlmostEqual(sf.info(str(directory / "voice" / "original_s1.wav")).duration, 9.74, places=1)
+
+    def test_waveform_peaks_and_thumbnails(self):
+        source = self.tmp / "clip.wav"
+        tone(source, seconds=4.0)
+        directory, data = project.create_from_file(source, "Волна")
+        self.assertEqual(project.make_thumbnail(directory, data), "")  # audio has no frame
+        shutil.copy(source, directory / "work" / "audio.wav")
+        peaks = project.waveform_peaks(directory, data, bins=100)
+        self.assertEqual(len(peaks["peaks"]), 100)
+        self.assertEqual(max(peaks["peaks"]), 1.0)
+        self.assertAlmostEqual(peaks["duration"], 4.0, places=2)
+        self.assertEqual(project.waveform_peaks(directory, data, bins=100)["stamp"], peaks["stamp"])  # cached
+
+        video = self.tmp / "clip.mp4"
+        subprocess.run([project.ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
+                        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10", "-i", str(source),
+                        "-shortest", "-pix_fmt", "yuv420p", str(video)], check=True)
+        directory, data = project.create_from_file(video, "Кадр")
+        self.assertEqual(project.make_thumbnail(directory, data), "source/thumb.jpg")
+        self.assertTrue((directory / "source" / "thumb.jpg").is_file())
+        self.assertEqual([item["thumb"] for item in project.list_projects() if item["name"] == "Кадр"], ["source/thumb.jpg"])
 
     def test_delete_moves_to_trash(self):
         source = self.tmp / "clip.wav"

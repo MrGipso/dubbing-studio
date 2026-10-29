@@ -109,7 +109,7 @@ onState((state) => {
 for (const id of ["translationRefreshBtn", "scriptRefreshBtn", "transcriptionRefreshBtn", "cleanRefreshBtn", "musicRefreshBtn"]) {
   document.getElementById(id)?.addEventListener("click", () => {
     lastToolOutputsSignature = "";
-    refreshState().catch((error) => alert(error.message));
+    refreshState().catch((error) => notifyError(error));
   });
 }
 
@@ -119,7 +119,7 @@ async function transcribeReference({ audioField, textField, button, missingMessa
   const payload = toolValues();
   const audio = String(payload[audioField] || "").trim();
   if (!audio) {
-    alert(missingMessage);
+    toast(missingMessage, "warn");
     return;
   }
   payload.refAudio = audio;
@@ -131,7 +131,7 @@ async function transcribeReference({ audioField, textField, button, missingMessa
     const result = await waitForJobCompletion("reference_transcribe", t("Не удалось распознать образец. Подробности в логе."));
     field(textField).value = result.text || "";
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   } finally {
     button.textContent = originalText;
   }
@@ -163,7 +163,7 @@ function updateVoiceSourceMode() {
 async function fillLatestTranslationsJson(showMissingAlert = true) {
   const data = await api("/api/latest-translations");
   if (!data.path) {
-    if (showMissingAlert) alert(t("Готовый перевод (.translations.json) не найден."));
+    if (showMissingAlert) toast(t("Готовый перевод (.translations.json) не найден."), "warn");
     return "";
   }
   field("translateVoiceJson").value = data.path;
@@ -178,7 +178,7 @@ syncTranslationTargetToVoiceLanguage();
 updateVoiceSourceMode();
 
 document.getElementById("useLatestTranslationsBtn").addEventListener("click", () => {
-  fillLatestTranslationsJson(true).catch((error) => alert(error.message));
+  fillLatestTranslationsJson(true).catch((error) => notifyError(error));
 });
 
 document.getElementById("translationBtn").addEventListener("click", async (event) => {
@@ -186,7 +186,7 @@ document.getElementById("translationBtn").addEventListener("click", async (event
   try {
     const payload = toolValues();
     if (!String(payload.translateText || "").trim()) {
-      alert(t("Вставьте текст для перевода."));
+      toast(t("Вставьте текст для перевода."), "warn");
       return;
     }
     syncTranslationTargetToVoiceLanguage();
@@ -200,7 +200,7 @@ document.getElementById("translationBtn").addEventListener("click", async (event
       button.textContent = originalText;
     }
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -209,19 +209,19 @@ document.getElementById("translationVoiceBtn").addEventListener("click", async (
     const payload = toolValues();
     if (payload.translateVoiceSource === "direct") {
       if (!String(payload.translateVoiceText || "").trim()) {
-        alert(t("Вставьте готовый текст для озвучки."));
+        toast(t("Вставьте готовый текст для озвучки."), "warn");
         return;
       }
     } else if (!payload.translateVoiceJson) {
       payload.translateVoiceJson = await fillLatestTranslationsJson(false);
       if (!payload.translateVoiceJson) {
-        alert(t("Сначала переведите текст или выберите .translations.json."));
+        toast(t("Сначала переведите текст или выберите .translations.json."), "warn");
         return;
       }
     }
     await runToolJob("/api/run-text-voice", payload);
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -230,7 +230,7 @@ document.getElementById("translationVoiceBtn").addEventListener("click", async (
 async function fillLatestScriptJsonl(showMissingAlert = true) {
   const data = await api("/api/latest-script-jsonl");
   if (!data.path) {
-    if (showMissingAlert) alert(t("Готовый план озвучки сценария (.script.dub.jsonl) не найден."));
+    if (showMissingAlert) toast(t("Готовый план озвучки сценария (.script.dub.jsonl) не найден."), "warn");
     return "";
   }
   field("scriptJsonl").value = data.path;
@@ -238,7 +238,7 @@ async function fillLatestScriptJsonl(showMissingAlert = true) {
 }
 
 document.getElementById("useLatestScriptJsonlBtn").addEventListener("click", () => {
-  fillLatestScriptJsonl(true).catch((error) => alert(error.message));
+  fillLatestScriptJsonl(true).catch((error) => notifyError(error));
 });
 
 document.getElementById("scriptPrepareBtn").addEventListener("click", async (event) => {
@@ -246,7 +246,7 @@ document.getElementById("scriptPrepareBtn").addEventListener("click", async (eve
   try {
     const payload = toolValues();
     if (!String(payload.scriptText || "").trim()) {
-      alert(t("Вставьте готовый сценарий."));
+      toast(t("Вставьте готовый сценарий."), "warn");
       return;
     }
     const originalText = button.textContent;
@@ -259,7 +259,7 @@ document.getElementById("scriptPrepareBtn").addEventListener("click", async (eve
       button.textContent = originalText;
     }
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -268,12 +268,12 @@ document.getElementById("scriptVoiceBtn").addEventListener("click", async () => 
     const payload = toolValues();
     if (!payload.scriptJsonl) payload.scriptJsonl = await fillLatestScriptJsonl(false);
     if (!payload.scriptJsonl) {
-      alert(t("Сначала подготовьте сценарий или выберите .script.dub.jsonl."));
+      toast(t("Сначала подготовьте сценарий или выберите .script.dub.jsonl."), "warn");
       return;
     }
     await runToolJob("/api/run-script-voice", payload);
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -283,12 +283,12 @@ document.getElementById("transcriptionBtn").addEventListener("click", async () =
   try {
     const payload = toolValues();
     if (!payload.transcribeVideo && !payload.transcribeAudio) {
-      alert(t("Выберите видео или аудио для транскрибации."));
+      toast(t("Выберите видео или аудио для транскрибации."), "warn");
       return;
     }
     await runToolJob("/api/run-transcription", payload);
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -341,7 +341,7 @@ async function cleanOutputWav(fileName) {
   try {
     await runToolJob("/api/run-clean-wav", { fileName, mode: "soft", minPause: 0.15, fadeMs: 40, normalize: true });
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 }
 
@@ -361,14 +361,14 @@ document.getElementById("useLatestCleanWavBtn").addEventListener("click", async 
   try {
     const data = await api("/api/latest-audio");
     if (!data.path) {
-      alert(t("Готовый WAV не найден."));
+      toast(t("Готовый WAV не найден."), "warn");
       return;
     }
     field("cleanWavInput").value = data.path;
     updateCleanPreview(data.path, "original");
     updateCleanPreview("", "result");
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -380,7 +380,7 @@ document.getElementById("cleanWavBtn").addEventListener("click", async () => {
       if (data.path) field("cleanWavInput").value = payload.cleanWavInput = data.path;
     }
     if (!String(payload.cleanWavInput || "").trim()) {
-      alert(t("Выберите WAV для обработки."));
+      toast(t("Выберите WAV для обработки."), "warn");
       return;
     }
     updateCleanPreview(payload.cleanWavInput, "original");
@@ -421,7 +421,7 @@ document.getElementById("cleanWavBtn").addEventListener("click", async () => {
       field("cleanWavOutput").value = result.wav;
     }
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -439,12 +439,12 @@ document.getElementById("useLatestAudioBtn").addEventListener("click", async () 
   try {
     const data = await api("/api/latest-audio");
     if (!data.path) {
-      alert(t("Готовый аудиофайл не найден."));
+      toast(t("Готовый аудиофайл не найден."), "warn");
       return;
     }
     field("musicVoiceAudio").value = data.path;
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });
 
@@ -457,6 +457,6 @@ document.getElementById("musicMixBtn").addEventListener("click", async () => {
     }
     await runToolJob("/api/run-music-mix", payload);
   } catch (error) {
-    alert(error.message);
+    notifyError(error);
   }
 });

@@ -49,6 +49,79 @@ function uploadForm(url, formData, onProgress) {
   });
 }
 
+// ---------------------------------------------------------------- icons, notifications, dialogs
+
+function icon(name, extra = "") {
+  return `<svg class="icon${extra ? ` ${extra}` : ""}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
+function setLabel(element, iconName, text) {
+  element.innerHTML = `${icon(iconName)}${escapeHtml(text)}`;
+}
+
+const toastHost = document.createElement("div");
+toastHost.className = "toasts";
+toastHost.setAttribute("role", "status");
+toastHost.setAttribute("aria-live", "polite");
+document.body.appendChild(toastHost);
+
+const TOAST_ICONS = { info: "info", ok: "check", warn: "alert", error: "alert" };
+
+// A short message in the corner instead of the browser's alert().
+function toast(message, type = "info", timeout = type === "error" ? 9000 : 5000) {
+  const item = document.createElement("div");
+  item.className = `toast toast-${type}`;
+  item.innerHTML = `${icon(TOAST_ICONS[type] || "info")}<div class="toast-text" translate="no"></div>
+    <button type="button" class="toast-close" aria-label="${escapeHtml(t("Закрыть"))}">${icon("x")}</button>`;
+  item.querySelector(".toast-text").textContent = message;
+  const close = () => {
+    item.classList.add("leaving");
+    setTimeout(() => item.remove(), 200);
+  };
+  item.querySelector(".toast-close").addEventListener("click", close);
+  toastHost.appendChild(item);
+  if (timeout) setTimeout(close, timeout);
+  return item;
+}
+
+function notifyError(error) {
+  toast(error?.message || String(error), "error");
+}
+
+const confirmDialog = document.createElement("dialog");
+confirmDialog.className = "confirm-dialog";
+confirmDialog.innerHTML = `
+  <div class="confirm-body"><span class="confirm-icon">${icon("alert")}</span><p class="confirm-text" translate="no"></p></div>
+  <div class="confirm-actions"><button type="button" class="secondary" data-answer="no"></button><button type="button" data-answer="yes"></button></div>`;
+document.body.appendChild(confirmDialog);
+
+// The app's own confirmation dialog instead of confirm(); resolves to true or false.
+function askConfirm(message, { ok = t("Продолжить"), cancel = t("Отмена"), danger = false } = {}) {
+  return new Promise((resolve) => {
+    confirmDialog.querySelector(".confirm-text").textContent = message;
+    const yes = confirmDialog.querySelector('[data-answer="yes"]');
+    yes.textContent = ok;
+    yes.className = danger ? "danger" : "primary";
+    confirmDialog.querySelector('[data-answer="no"]').textContent = cancel;
+    confirmDialog.classList.toggle("is-danger", danger);
+    const finish = (value) => {
+      confirmDialog.close();
+      resolve(value);
+    };
+    confirmDialog.onclick = (event) => {
+      const button = event.target.closest("[data-answer]");
+      if (button) finish(button.dataset.answer === "yes");
+      else if (event.target === confirmDialog) finish(false);  // click on the backdrop
+    };
+    confirmDialog.oncancel = (event) => {
+      event.preventDefault();
+      finish(false);
+    };
+    confirmDialog.showModal();
+    yes.focus();
+  });
+}
+
 function badge(el, text, type) {
   if (!el) return;
   el.textContent = text;
@@ -303,7 +376,7 @@ for (const input of document.querySelectorAll("[data-file-input]")) {
     try {
       await uploadToolFile(file, input.dataset.fileInput, zone.dataset.target);
     } catch (error) {
-      alert(error.message);
+      notifyError(error);
     }
   });
 }
@@ -333,7 +406,7 @@ for (const zone of document.querySelectorAll("[data-drop-kind]")) {
     try {
       await uploadToolFile(file, zone.dataset.dropKind, zone.dataset.target);
     } catch (error) {
-      alert(error.message);
+      notifyError(error);
     }
   });
 }
