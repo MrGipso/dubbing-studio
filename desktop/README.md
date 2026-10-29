@@ -75,8 +75,9 @@ cargo tauri build
 
 ## Выпуск на GitHub
 
-Workflow `.github/workflows/desktop.yml` собирает установщик на тег `v*` и
-прикладывает его к черновику релиза.
+Workflow `.github/workflows/desktop.yml` запускается вручную на вкладке
+Actions: введите тег версии (`v0.2.0`), он соберёт установщик и приложит его к
+черновику релиза. Перед этим поднимите `version` в `src-tauri/tauri.conf.json`.
 
 ## Что ещё не сделано
 

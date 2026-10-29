@@ -1,11 +1,14 @@
-# Builds the Windows installer of the desktop app on a version tag (v0.2.0, ...)
-# and attaches it to a draft GitHub release.
+# Builds the Windows installer of the desktop app and attaches it to a draft
+# GitHub release. Run it by hand from the Actions tab with the version tag
+# (v0.2.0, ...).
 name: Desktop installer
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag, for example v0.2.0
+        required: true
 
 jobs:
   windows:
@@ -37,6 +40,6 @@ jobs:
         with:
           projectPath: desktop
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: Dubbing Studio ${{ github.ref_name }}
+          tagName: ${{ inputs.tag }}
+          releaseName: Dubbing Studio ${{ inputs.tag }}
           releaseDraft: true
