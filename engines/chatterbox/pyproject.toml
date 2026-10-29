@@ -1,0 +1,31 @@
+# Environment for the Chatterbox engine. Created by "Install engine" (uv sync).
+[project]
+name = "dubbing-engine-chatterbox"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "chatterbox-tts>=0.1.4",
+    "torch",
+    "torchaudio",
+    "soundfile",
+    # resemble-perth (watermark) imports pkg_resources, removed in setuptools 81.
+    "setuptools<81",
+]
+
+[tool.uv]
+package = false
+# chatterbox-tts pins torch 2.6, which has no CUDA 12.8 build and does not run
+# on RTX 50xx (Blackwell). Newer torch works with it.
+override-dependencies = [
+    "torch>=2.7,<2.9",
+    "torchaudio>=2.7,<2.9",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]
+torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]

@@ -1,0 +1,57 @@
+{
+  "name": "OmniVoice",
+  "description": "Многоязычная модель с клонированием голоса по 10–30 с образца и точным попаданием в длительность фразы. Лучший выбор для дубляжа по таймингам.",
+  "homepage": "https://github.com/k2-fsa/OmniVoice",
+  "license": "Код Apache-2.0, веса модели CC-BY-NC 4.0",
+  "commercial_use": false,
+  "runtime": "venv",
+  "install_note": "6–8 ГБ (PyTorch CUDA + модель при первом запуске). Нужна видеокарта NVIDIA с 4+ ГБ памяти; на процессоре работает, но медленно.",
+  "languages": "646 языков (код ISO: en, ru, de, es, ...)",
+  "sample_rate": 24000,
+  "supports": {
+    "voice_clone": true,
+    "voice_list": false,
+    "duration": true,
+    "speed": true,
+    "instruct": true
+  },
+  "settings": [
+    {
+      "key": "model",
+      "label": "Модель",
+      "type": "text",
+      "default": "k2-fsa/OmniVoice",
+      "advanced": true,
+      "help": "Имя на HuggingFace или путь к локальной папке с весами."
+    },
+    {
+      "key": "num_step",
+      "label": "Качество (шаги)",
+      "type": "int",
+      "default": 16,
+      "min": 4,
+      "max": 64,
+      "help": "Больше шагов: чище звук, но медленнее. 16 — хороший баланс."
+    },
+    {
+      "key": "guidance_scale",
+      "label": "Guidance",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.1,
+      "advanced": true,
+      "help": "Насколько строго модель следует тексту и голосу."
+    },
+    {
+      "key": "dtype",
+      "label": "Точность",
+      "type": "select",
+      "default": "float16",
+      "options": ["float16", "bfloat16", "float32"],
+      "advanced": true,
+      "help": "float16 быстрее на видеокарте; на процессоре используется float32."
+    }
+  ]
+}

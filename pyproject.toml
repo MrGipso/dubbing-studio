@@ -1,0 +1,19 @@
+[project]
+name = "dubbing-studio"
+version = "0.1.0"
+description = "Local video/audio dubbing: Whisper -> any LLM translator -> any TTS engine"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "faster-whisper>=1.2.1",
+    # faster-whisper 1.2.x passes metadata_errors to av.open(), dropped in PyAV 18.
+    "av>=11,<18",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+youtube = ["yt-dlp"]
+
+[tool.uv]
+package = false

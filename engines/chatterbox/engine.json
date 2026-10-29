@@ -1,0 +1,50 @@
+{
+  "name": "Chatterbox Multilingual",
+  "description": "Модель Resemble AI с клонированием голоса по короткому образцу, 23 языка. Открытая лицензия MIT: можно использовать и в коммерческих роликах.",
+  "homepage": "https://github.com/resemble-ai/chatterbox",
+  "license": "MIT (код и веса)",
+  "commercial_use": true,
+  "runtime": "venv",
+  "install_note": "6–8 ГБ (PyTorch CUDA + модель при первом запуске). В звук встраивается неслышимый водяной знак Resemble (Perth).",
+  "languages": ["ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja", "ko", "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh"],
+  "sample_rate": 24000,
+  "supports": {
+    "voice_clone": true,
+    "voice_list": false,
+    "duration": false,
+    "speed": false,
+    "instruct": false
+  },
+  "settings": [
+    {
+      "key": "exaggeration",
+      "label": "Эмоциональность",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.25,
+      "max": 2.0,
+      "step": 0.05,
+      "help": "0.5 — нейтрально, выше — экспрессивнее и быстрее."
+    },
+    {
+      "key": "cfg_weight",
+      "label": "Следование образцу (CFG)",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05,
+      "help": "Ниже — медленнее и спокойнее речь. Если язык образца отличается от языка озвучки, ставьте 0."
+    },
+    {
+      "key": "temperature",
+      "label": "Температура",
+      "type": "float",
+      "default": 0.8,
+      "min": 0.05,
+      "max": 2.0,
+      "step": 0.05,
+      "advanced": true
+    }
+  ]
+}

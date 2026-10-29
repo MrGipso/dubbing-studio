@@ -1,0 +1,29 @@
+{
+  "name": "Мой движок",
+  "description": "Короткое описание для пользователя: что умеет, чем хорош.",
+  "homepage": "https://github.com/author/my-tts",
+  "license": "Лицензия кода и весов, например MIT / CC-BY-NC",
+  "commercial_use": false,
+  "runtime": "venv",
+  "install_note": "Сколько места займёт и что нужно (видеокарта, память).",
+  "languages": ["en", "ru"],
+  "sample_rate": 24000,
+  "supports": {
+    "voice_clone": true,
+    "voice_list": false,
+    "duration": false,
+    "speed": false,
+    "instruct": false
+  },
+  "settings": [
+    {
+      "key": "quality",
+      "label": "Качество",
+      "type": "int",
+      "default": 16,
+      "min": 1,
+      "max": 64,
+      "help": "Поле появится в интерфейсе само. Типы: int, float, text, select (+options), bool."
+    }
+  ]
+}

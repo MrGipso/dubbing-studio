@@ -1,0 +1,26 @@
+# Dependencies of your engine. "Install engine" runs: uv sync --project engines/<id>
+# The engine gets its own .venv, so its torch/transformers versions never clash
+# with the main app or other engines.
+[project]
+name = "dubbing-engine-template"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy",
+    "soundfile",
+    # "my-tts-package>=1.0",
+    # "torch",
+]
+
+[tool.uv]
+package = false
+
+# Uncomment to get CUDA 12.8 PyTorch (needed for RTX 50xx):
+# [[tool.uv.index]]
+# name = "pytorch-cu128"
+# url = "https://download.pytorch.org/whl/cu128"
+# explicit = true
+#
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]
+# torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]

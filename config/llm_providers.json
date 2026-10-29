@@ -1,0 +1,119 @@
+{
+  "providers": [
+    {
+      "id": "lmstudio",
+      "label": "LM Studio",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "api": "openai",
+      "manage": "lmstudio",
+      "local": true,
+      "needs_key": false,
+      "hint": "Запустите LM Studio, откройте Developer и нажмите Start Server. Модель программа загрузит сама."
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "api": "ollama",
+      "manage": "ollama",
+      "local": true,
+      "needs_key": false,
+      "hint": "Установите Ollama и скачайте модель, например: ollama pull qwen3:8b"
+    },
+    {
+      "id": "llamacpp",
+      "label": "llama.cpp server",
+      "base_url": "http://127.0.0.1:8080/v1",
+      "api": "openai",
+      "local": true,
+      "needs_key": false,
+      "hint": "Запустите: llama-server -m model.gguf --port 8080 -c 8192"
+    },
+    {
+      "id": "koboldcpp",
+      "label": "KoboldCpp",
+      "base_url": "http://127.0.0.1:5001/v1",
+      "api": "openai",
+      "local": true,
+      "needs_key": false,
+      "hint": "Запустите KoboldCpp с моделью, API включён по умолчанию."
+    },
+    {
+      "id": "jan",
+      "label": "Jan",
+      "base_url": "http://127.0.0.1:1337/v1",
+      "api": "openai",
+      "local": true,
+      "needs_key": false,
+      "hint": "В Jan включите Local API Server."
+    },
+    {
+      "id": "vllm",
+      "label": "vLLM",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api": "openai",
+      "local": true,
+      "needs_key": false,
+      "hint": "vllm serve <model> --port 8000"
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter (облако)",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api": "openai",
+      "local": false,
+      "needs_key": true,
+      "key_env": "OPENROUTER_API_KEY",
+      "hint": "Один ключ для сотен моделей (Claude, Gemini, GPT, DeepSeek, Qwen). Ключ: openrouter.ai/keys"
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI (облако)",
+      "base_url": "https://api.openai.com/v1",
+      "api": "openai",
+      "local": false,
+      "needs_key": true,
+      "key_env": "OPENAI_API_KEY",
+      "hint": "Ключ: platform.openai.com/api-keys"
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek (облако)",
+      "base_url": "https://api.deepseek.com/v1",
+      "api": "openai",
+      "local": false,
+      "needs_key": true,
+      "key_env": "DEEPSEEK_API_KEY",
+      "hint": "Ключ: platform.deepseek.com"
+    },
+    {
+      "id": "groq",
+      "label": "Groq (облако)",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api": "openai",
+      "local": false,
+      "needs_key": true,
+      "key_env": "GROQ_API_KEY",
+      "hint": "Ключ: console.groq.com/keys"
+    },
+    {
+      "id": "gemini",
+      "label": "Google Gemini (облако)",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api": "openai",
+      "local": false,
+      "needs_key": true,
+      "key_env": "GEMINI_API_KEY",
+      "hint": "Ключ: aistudio.google.com/apikey"
+    },
+    {
+      "id": "custom",
+      "label": "Другой сервер (OpenAI-совместимый)",
+      "base_url": "",
+      "api": "openai",
+      "local": true,
+      "needs_key": false,
+      "hint": "Любой сервер с методом /v1/chat/completions. Укажите адрес, при необходимости ключ."
+    }
+  ]
+}

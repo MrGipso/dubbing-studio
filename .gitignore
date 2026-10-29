@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Engine environments and local overrides
+engines/*/.venv/
+engines/*/engine.local.json
+
+# User data
+inputs/
+outputs/
+
+# Local settings and secrets (API keys)
+config/*.local.json
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

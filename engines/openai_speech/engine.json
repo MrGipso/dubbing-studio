@@ -1,0 +1,58 @@
+{
+  "name": "Любой сервер /v1/audio/speech",
+  "description": "Подключает любой TTS-сервер с OpenAI-совместимым API без программирования: Kokoro-FastAPI, Chatterbox-TTS-Server, openedai-speech, AllTalk, облачный OpenAI и другие. Голос выбирается из списка сервера.",
+  "homepage": "https://platform.openai.com/docs/api-reference/audio/createSpeech",
+  "license": "Зависит от сервера и модели",
+  "commercial_use": null,
+  "runtime": "main",
+  "install_note": "Ничего ставить не нужно: укажите адрес уже запущенного сервера.",
+  "languages": "Зависит от сервера",
+  "sample_rate": 24000,
+  "supports": {
+    "voice_clone": false,
+    "voice_list": true,
+    "duration": false,
+    "speed": true,
+    "instruct": false
+  },
+  "settings": [
+    {
+      "key": "base_url",
+      "label": "Адрес сервера",
+      "type": "text",
+      "default": "http://127.0.0.1:8880/v1",
+      "help": "Например Kokoro-FastAPI: http://127.0.0.1:8880/v1, OpenAI: https://api.openai.com/v1"
+    },
+    {
+      "key": "model",
+      "label": "Модель",
+      "type": "text",
+      "default": "kokoro",
+      "help": "Имя модели на сервере: kokoro, tts-1, gpt-4o-mini-tts, ..."
+    },
+    {
+      "key": "voice",
+      "label": "Голос",
+      "type": "text",
+      "default": "af_heart",
+      "help": "Имя голоса на сервере (кнопка «Голоса сервера» покажет список)."
+    },
+    {
+      "key": "instructions",
+      "label": "Инструкция голосу",
+      "type": "text",
+      "default": "",
+      "advanced": true,
+      "help": "Только для моделей, которые это понимают (gpt-4o-mini-tts): «говори спокойно, как диктор»."
+    },
+    {
+      "key": "timeout",
+      "label": "Таймаут, с",
+      "type": "int",
+      "default": 300,
+      "min": 10,
+      "max": 3600,
+      "advanced": true
+    }
+  ]
+}
