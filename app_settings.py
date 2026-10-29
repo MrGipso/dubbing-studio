@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
     },
     "tts": {
         "engine": "omnivoice",
+        "keepWarmMinutes": 10,
         "device": "auto",
         "engines": {},
     },
@@ -38,6 +39,10 @@ DEFAULT_SETTINGS = {
         "model": "medium",
         "device": "cuda",
         "computeType": "float16",
+    },
+    "ui": {
+        # "" = follow the browser language; otherwise a code from locales/ (or "ru").
+        "language": "",
     },
 }
 

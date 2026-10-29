@@ -123,15 +123,136 @@ def handle(adapter, state, message):
     raise ValueError(f"Unknown command: {cmd}")
 
 
+def error_reply(message, exc):
+    return {
+        "id": message.get("id"),
+        "ok": False,
+        "error": f"{type(exc).__name__}: {exc}",
+        "traceback": traceback.format_exc(),
+    }
+
+
+def serve(adapter, engine_dir, runtime_path, idle_seconds):
+    """Resident mode: keep the model loaded and accept one client at a time.
+
+    The host connects to 127.0.0.1:<port> from the runtime file and must send
+    the token it passed in DUB_ENGINE_TOKEN. The worker exits after
+    idle_seconds without requests, or on "shutdown".
+    """
+    import socket
+    import time
+
+    token = os.environ.get("DUB_ENGINE_TOKEN", "")
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    server.settimeout(1.0)
+    info = {
+        "port": server.getsockname()[1],
+        "pid": os.getpid(),
+        "token": token,
+        "engine": engine_dir.name,
+        "python": sys.executable,
+        "started": time.time(),
+        "last_activity": time.time(),
+        "idle_seconds": idle_seconds,
+        "loaded": False,
+    }
+
+    def write_info():
+        tmp = runtime_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(info), encoding="utf-8")
+        tmp.replace(runtime_path)
+
+    write_info()
+    state = {}
+    loaded_key = None
+    running = True
+    try:
+        while running:
+            if idle_seconds and time.time() - info["last_activity"] > idle_seconds:
+                print("Idle timeout: unloading the model.", flush=True)
+                break
+            try:
+                connection, _ = server.accept()
+            except socket.timeout:
+                continue
+            connection.settimeout(None)
+            with connection:
+                reader = connection.makefile("r", encoding="utf-8", errors="replace")
+                writer = connection.makefile("w", encoding="utf-8")
+
+                def reply(payload):
+                    writer.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    writer.flush()
+
+                try:
+                    hello = json.loads(reader.readline() or "{}")
+                except json.JSONDecodeError:
+                    continue
+                if not token or hello.get("token") != token:
+                    continue  # not our host: drop the connection silently
+                reply({"id": hello.get("id", 0), "ok": True, "result": {"ready": True, "resident": True, "loaded": info["loaded"]}})
+                try:
+                    for line in reader:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        message = json.loads(line)
+                        info["last_activity"] = time.time()
+                        cmd = message.get("cmd")
+                        if cmd == "release":
+                            break
+                        if cmd == "shutdown":
+                            reply({"id": message.get("id"), "ok": True, "result": {}})
+                            running = False
+                            break
+                        try:
+                            if cmd == "load":
+                                key = json.dumps([message.get("settings"), message.get("device")], sort_keys=True)
+                                if key == loaded_key and state.get("load_result"):
+                                    reply({"id": message.get("id"), "ok": True, "result": {**state["load_result"], "reused": True}})
+                                    continue
+                                result = handle(adapter, state, message)
+                                loaded_key = key
+                                state["load_result"] = result
+                                info["loaded"] = True
+                                write_info()
+                            else:
+                                result = handle(adapter, state, message)
+                            reply({"id": message.get("id"), "ok": True, "result": result})
+                        except Exception as exc:
+                            reply(error_reply(message, exc))
+                except (OSError, ValueError):
+                    pass  # client went away; keep serving
+                info["last_activity"] = time.time()
+                write_info()
+    finally:
+        server.close()
+        runtime_path.unlink(missing_ok=True)
+        unload = getattr(adapter, "unload", None)
+        if callable(unload):
+            unload()
+    return 0
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("usage: worker.py <engine_dir>", file=sys.stderr)
+    args = sys.argv[1:]
+    if not args:
+        print("usage: worker.py <engine_dir> [--serve --runtime-file FILE --idle SECONDS]", file=sys.stderr)
         return 2
-    for stream in (sys.stdin, sys.stderr):
+    for stream in (sys.stdin, sys.stderr, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+    engine_dir = Path(args[0]).resolve()
+
+    if "--serve" in args:
+        runtime_path = Path(args[args.index("--runtime-file") + 1])
+        idle_seconds = int(float(args[args.index("--idle") + 1])) if "--idle" in args else 600
+        adapter = load_adapter(engine_dir)  # import errors end up in the worker log
+        return serve(adapter, engine_dir, runtime_path, idle_seconds)
+
     channel = open_protocol_channel()
-    engine_dir = Path(sys.argv[1]).resolve()
 
     def reply(payload):
         channel.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -159,12 +280,7 @@ def main():
         try:
             reply({"id": message.get("id"), "ok": True, "result": handle(adapter, state, message)})
         except Exception as exc:
-            reply({
-                "id": message.get("id"),
-                "ok": False,
-                "error": f"{type(exc).__name__}: {exc}",
-                "traceback": traceback.format_exc(),
-            })
+            reply(error_reply(message, exc))
     return 0
 
 

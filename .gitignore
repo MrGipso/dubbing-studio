@@ -21,3 +21,6 @@ config/*.local.json
 .idea/
 Thumbs.db
 .DS_Store
+
+# Resident engine workers (ports, tokens, logs)
+.runtime/

@@ -39,17 +39,17 @@ def make_project(tmp, voiced=False):
         for u in units
     ), encoding="utf-8")
     data = project.load_project(directory)
+    data["transcribed"] = True
+    english = data["tracks"]["en"]
+    english["translated"] = True
     if voiced:
-        track = directory / "output" / "Фразы.en.voice.wav"
-        sf.write(str(track), np.zeros(22050, dtype=np.float32), 22050)
-        track.with_name(track.stem + ".report.json").write_text(json.dumps({"segments": [
+        voice_track = directory / "output" / "Фразы.en.voice.wav"
+        sf.write(str(voice_track), np.zeros(22050, dtype=np.float32), 22050)
+        voice_track.with_name(voice_track.stem + ".report.json").write_text(json.dumps({"segments": [
             {"id": "unit_0001", "speedup": 1.0, "clipped_seconds": 0.0, "natural_seconds": 1.2},
             {"id": "unit_0002", "speedup": 1.18, "clipped_seconds": 0.4, "natural_seconds": 2.4},
         ]}), encoding="utf-8")
-        data["voice_track"] = track.relative_to(directory).as_posix()
-        data["state"] = {"prepared": True, "voiced": True, "exported": True}
-    else:
-        data["state"] = {"prepared": True, "voiced": False, "exported": False}
+        english.update(voiced=True, exported=True, voice_track=voice_track.relative_to(directory).as_posix())
     project.save_project(directory, data)
     return directory, project.load_project(directory)
 
@@ -67,14 +67,14 @@ class PhraseProjectTests(unittest.TestCase):
     def test_edit_updates_plan_subtitles_and_flags(self):
         directory, data = make_project(self.tmp, voiced=True)
         data = project.set_translations(directory, data, {2: "Second phrase."})
-        plan = [json.loads(line) for line in project.plan_path(directory, data).read_text(encoding="utf-8").splitlines()]
+        plan = [json.loads(line) for line in project.plan_path(directory, "English").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(plan[1]["text"], "Second phrase.")
         self.assertEqual(plan[0]["text"], "First one.")
-        self.assertIn("Second phrase.", project.translated_srt_path(directory, data).read_text(encoding="utf-8"))
+        self.assertIn("Second phrase.", project.translated_srt_path(directory, "English").read_text(encoding="utf-8"))
         saved = project.load_project(directory)
-        self.assertEqual(saved["edited"], [2])
-        self.assertEqual(saved["dirty"], [2])
-        self.assertFalse(saved["state"]["exported"])
+        self.assertEqual(saved["tracks"]["en"]["edited"], [2])
+        self.assertEqual(saved["tracks"]["en"]["dirty"], [2])
+        self.assertFalse(saved["tracks"]["en"]["exported"])
         with self.assertRaises(project.ProjectError):
             project.set_translations(directory, saved, {1: "   "})
         with self.assertRaises(project.ProjectError):
@@ -84,8 +84,8 @@ class PhraseProjectTests(unittest.TestCase):
         directory, data = make_project(self.tmp, voiced=False)
         project.set_translations(directory, data, {1: "Changed."})
         saved = project.load_project(directory)
-        self.assertEqual(saved["edited"], [1])
-        self.assertEqual(saved["dirty"], [])
+        self.assertEqual(saved["tracks"]["en"]["edited"], [1])
+        self.assertEqual(saved["tracks"]["en"]["dirty"], [])
 
     def test_long_phrases_come_from_the_fit_report(self):
         directory, data = make_project(self.tmp, voiced=True)
@@ -101,7 +101,7 @@ class PhraseProjectTests(unittest.TestCase):
             server.close()
         self.assertEqual(changed, {2: "EN Вторая фраза."})
         saved = project.load_project(directory)
-        self.assertEqual(saved["dirty"], [2])
+        self.assertEqual(saved["tracks"]["en"]["dirty"], [2])
         request = json.loads(server.requests[-1][2]["messages"][-1]["content"])
         self.assertEqual(request["task"], "shorten_dubbing_lines")
         self.assertEqual(request["dubbing_units"][0]["slot_seconds"], 1.5)

@@ -85,19 +85,81 @@ class ProjectStateTests(TempProjects):
     def test_changes_invalidate_later_stages(self):
         source = self.tmp / "clip.wav"
         tone(source)
-        directory, data = project.create_from_file(source, "Тест", "German")
+        directory, data = project.create_from_file(source, "Тест", ["German"])
         self.assertEqual(data["source"]["duration"], 3.0)
         self.assertFalse(data["source"]["has_video"])
-        data["state"] = {"prepared": True, "voiced": True, "exported": True}
+        data["transcribed"] = True
+        data["tracks"]["de"].update(translated=True, voiced=True, exported=True)
         project.save_project(directory, data)
+        self.assertEqual(project.load_project(directory)["state"], {"prepared": True, "voiced": True, "exported": True})
 
-        self.assertFalse(project.update_project(directory, {"mix": {"music": 0.1}})["state"]["exported"])
+        self.assertFalse(project.update_project(directory, {"mix": {"music": 0.1}})["tracks"]["de"]["exported"])
         state = project.update_project(directory, {"voice": {"mode": "engine"}})["state"]
         self.assertTrue(state["prepared"])
         self.assertFalse(state["voiced"])
-        self.assertFalse(project.update_project(directory, {"target": "French"})["state"]["prepared"])
+
+        # Adding a language keeps the finished one and plans only the new one.
+        data = project.update_project(directory, {"targets": ["German", "French"]})
+        self.assertTrue(data["tracks"]["de"]["translated"])
+        self.assertFalse(data["tracks"]["fr"]["translated"])
+        self.assertFalse(data["state"]["prepared"])
+        steps = project.plan_steps(data, "all")
+        self.assertEqual(steps[0], ("translate", "French"))
+        self.assertIn(("voice", "German"), steps)  # German voice was invalidated by the voice change
+        self.assertNotIn(("translate", "German"), steps)
+        self.assertEqual(project.plan_steps(data, "translate"), [("translate", "French")])
+
+        data = project.update_project(directory, {"active": "French"})
+        self.assertEqual(data["active"], "French")
+        self.assertEqual(project.update_project(directory, {"active": "Klingon"})["active"], "German")
+
+        self.assertFalse(project.update_project(directory, {"separate": False})["transcribed"])
         # Unknown keys from the UI are ignored.
         self.assertNotIn("evil", project.update_project(directory, {"evil": 1}))
+
+    def test_old_single_language_projects_are_migrated(self):
+        source = self.tmp / "clip.wav"
+        tone(source)
+        directory, _ = project.create_from_file(source, "Старый")
+        (directory / "work" / "transcript.json").write_text("{}", encoding="utf-8")
+        old = {
+            "name": "Старый", "target": "Spanish",
+            "state": {"prepared": True, "voiced": True, "exported": False},
+            "edited": [3], "dirty": [3], "voice_track": "output/x.es.voice.wav", "video": "",
+            "source": project.load_project(directory)["source"],
+        }
+        (directory / "project.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+        data = project.load_project(directory)
+        self.assertEqual(data["targets"], ["Spanish"])
+        self.assertTrue(data["transcribed"])
+        spanish = data["tracks"]["es"]
+        self.assertEqual((spanish["translated"], spanish["voiced"], spanish["exported"]), (True, True, False))
+        self.assertEqual(spanish["dirty"], [3])
+        self.assertEqual(spanish["voice_track"], "output/x.es.voice.wav")
+        self.assertNotIn("voice_track", data)
+
+    def test_voice_sample_candidates_and_choice(self):
+        source = self.tmp / "clip.wav"
+        tone(source, seconds=40.0)
+        directory, data = project.create_from_file(source, "Голос")
+        work = directory / "work"
+        shutil.copy(source, work / "audio.wav")
+        segments = [
+            {"start": 0.5, "end": 4.5, "text": "Раз.", "avg_logprob": -0.2, "no_speech_prob": 0.05},
+            {"start": 4.8, "end": 9.0, "text": "Два.", "avg_logprob": -0.2, "no_speech_prob": 0.05},
+            {"start": 20.0, "end": 24.0, "text": "Три.", "avg_logprob": -0.4, "no_speech_prob": 0.05},
+            {"start": 24.3, "end": 29.5, "text": "Четыре.", "avg_logprob": -0.4, "no_speech_prob": 0.05},
+        ]
+        (work / "transcript.json").write_text(json.dumps({"segments": segments}, ensure_ascii=False), encoding="utf-8")
+        project.stage_voice_sample(directory, data)
+        project.save_project(directory, data)
+        voice = project.load_project(directory)["voice"]
+        self.assertEqual(len(voice["candidates"]), 2)
+        self.assertEqual(voice["auto_text"], "Раз. Два.")
+        chosen = project.choose_sample(directory, 1)["voice"]
+        self.assertEqual(chosen["auto_index"], 1)
+        self.assertEqual(chosen["auto_text"], "Три. Четыре.")
+        self.assertAlmostEqual(sf.info(str(directory / "voice" / "original.wav")).duration, 9.74, places=1)
 
     def test_delete_moves_to_trash(self):
         source = self.tmp / "clip.wav"
@@ -144,6 +206,45 @@ class SeparatorProtocolTests(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class WarmEngineTests(unittest.TestCase):
+    def test_resident_worker_loads_the_model_once(self):
+        tmp = Path(tempfile.mkdtemp())
+        saved = (tts_engines.ENGINES_DIR, tts_engines.RUNTIME_DIR)
+        try:
+            engine = tmp / "fake_tts"
+            engine.mkdir()
+            (engine / "engine.json").write_text(json.dumps({"name": "Fake TTS", "runtime": "venv"}), encoding="utf-8")
+            (engine / "engine.local.json").write_text(json.dumps({"python": sys.executable}), encoding="utf-8")
+            (engine / "adapter.py").write_text(
+                "from pathlib import Path\n"
+                "import numpy as np\n"
+                "LOADS = Path(__file__).with_name('loads.txt')\n"
+                "def load(settings, device):\n"
+                "    LOADS.write_text(str(int(LOADS.read_text() or 0) + 1) if LOADS.exists() else '1')\n"
+                "    return {'sample_rate': 16000}\n"
+                "def synthesize(text, language=None, voice=None, duration=None, speed=1.0, hints=None):\n"
+                "    return np.zeros(1600, dtype=np.float32), 16000\n",
+                encoding="utf-8",
+            )
+            tts_engines.ENGINES_DIR = tmp
+            tts_engines.RUNTIME_DIR = tmp / ".runtime"
+            logs = []
+            for index in range(2):
+                with tts_engines.EngineSession("fake_tts", log=logs.append, startup_timeout=60, resident=True) as session:
+                    session.load({"quality": 1}, "cpu")
+                    result = session.synthesize("hi", tmp / f"out{index}.wav")
+                    self.assertEqual(result["sample_rate"], 16000)
+            self.assertEqual((engine / "loads.txt").read_text(), "1")
+            self.assertTrue(any("already loaded" in line for line in logs))
+            self.assertEqual([item["engine"] for item in tts_engines.resident_status()], ["fake_tts"])
+            self.assertEqual(tts_engines.stop_resident(), ["fake_tts"])
+            self.assertFalse(tts_engines.runtime_file("fake_tts").exists())
+        finally:
+            tts_engines.stop_resident()
+            tts_engines.ENGINES_DIR, tts_engines.RUNTIME_DIR = saved
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class ProjectApiTests(TempProjects):
     def setUp(self):
         super().setUp()
@@ -175,8 +276,10 @@ class ProjectApiTests(TempProjects):
     def test_create_update_and_serve(self):
         wav = io.BytesIO()
         sf.write(wav, np.zeros(22050, dtype=np.float32), 22050, format="WAV")
-        created = self.upload("/api/projects", "Мой ролик.wav", wav.getvalue(), {"target": "Spanish"})["project"]
-        self.assertEqual(created["target"], "Spanish")
+        created = self.upload("/api/projects", "Мой ролик.wav", wav.getvalue(), {"targets": "Spanish,German"})["project"]
+        self.assertEqual(created["targets"], ["Spanish", "German"])
+        self.assertEqual(created["active"], "Spanish")
+        self.assertEqual([language["code"] for language in created["languages"]], ["es", "de"])
         self.assertEqual(created["name"], "Мой ролик")
         self.assertIn("source", created["files"])
 

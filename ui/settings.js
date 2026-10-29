@@ -30,7 +30,7 @@ const asrEl = {
 const llmBadge = document.getElementById("llmBadge");
 const ttsBadge = document.getElementById("ttsBadge");
 
-let engineState = { settings: null, providers: [], keys: {}, engines: [], separators: [] };
+let engineState = { settings: null, providers: [], keys: {}, engines: [], separators: [], resident: [] };
 let settingsSaveTimer = null;
 const settingsListeners = [];
 
@@ -65,6 +65,7 @@ function applySettingsPayload(data) {
     keys: data.keys || {},
     engines: data.engines || [],
     separators: data.separators || [],
+    resident: data.resident || [],
   };
   for (const listener of settingsListeners) listener(engineState);
 }
@@ -109,10 +110,10 @@ function renderLlmForm() {
 function updateProviderFields() {
   const provider = providerById(llmEl.provider.value);
   llmEl.hint.textContent = provider.hint || "";
-  llmEl.url.placeholder = provider.base_url ? `По умолчанию: ${provider.base_url}` : "http://127.0.0.1:ПОРТ/v1";
+  llmEl.url.placeholder = provider.base_url ? t("По умолчанию: {url}", { url: provider.base_url }) : t("http://127.0.0.1:ПОРТ/v1");
   const masked = engineState.keys[provider.id];
   llmEl.keyField.hidden = !(provider.needs_key || masked || provider.id === "custom");
-  llmEl.keyState.textContent = masked ? `— сохранён ${masked}` : provider.needs_key ? "— нужен" : "— если сервер требует";
+  llmEl.keyState.textContent = masked ? t("— сохранён {key}", { key: masked }) : provider.needs_key ? t("— нужен") : t("— если сервер требует");
   const managed = provider.manage === "lmstudio";
   llmEl.autoLoad.closest("label").hidden = !managed;
   llmEl.unloadOthers.closest("label").hidden = !managed;
@@ -133,19 +134,19 @@ function llmFormValues() {
 async function refreshLlmModels() {
   const values = llmFormValues();
   const params = new URLSearchParams({ provider: values.provider, url: values.url });
-  badge(llmEl.status, "Проверяю...", "neutral");
+  badge(llmEl.status, t("Проверяю..."), "neutral");
   const data = await api(`/api/llm/models?${params}`);
   llmEl.modelList.innerHTML = "";
   llmEl.models.innerHTML = "";
   if (!data.ok) {
-    badge(llmEl.status, "Нет связи", "bad");
+    badge(llmEl.status, t("Нет связи"), "bad");
     const row = document.createElement("div");
     row.className = "meta";
     row.textContent = `${data.error} ${providerById(values.provider).hint || ""}`;
     llmEl.models.appendChild(row);
     return;
   }
-  badge(llmEl.status, data.models.length ? `Доступно моделей: ${data.models.length}` : "Моделей нет", data.models.length ? "ok" : "warn");
+  badge(llmEl.status, data.models.length ? t("Доступно моделей: {count}", { count: data.models.length }) : t("Моделей нет"), data.models.length ? "ok" : "warn");
   for (const model of data.models) {
     const option = document.createElement("option");
     option.value = model.id;
@@ -159,7 +160,7 @@ async function refreshLlmModels() {
         <strong>${escapeHtml(model.name || model.id)}</strong>
         <div class="meta">${escapeHtml(model.id)}${model.details ? ` · ${escapeHtml(model.details)}` : ""}</div>
       </div>
-      <div class="${model.loaded ? "loaded" : "meta"}">${model.loaded ? "Загружена" : ""}</div>
+      <div class="${model.loaded ? "loaded" : "meta"}">${model.loaded ? t("Загружена") : ""}</div>
     `;
     row.addEventListener("click", () => {
       llmEl.model.value = model.id;
@@ -201,16 +202,16 @@ llmEl.test.addEventListener("click", async () => {
   llmEl.test.disabled = true;
   llmEl.testResult.hidden = false;
   llmEl.testResult.className = "test-result";
-  llmEl.testResult.textContent = "Отправляю пробный запрос... Первая загрузка модели может занять минуту.";
+  llmEl.testResult.textContent = t("Отправляю пробный запрос... Первая загрузка модели может занять минуту.");
   try {
     await saveEngineSettings();
     const data = await postJson("/api/llm/test", llmFormValues());
     llmEl.testResult.className = "test-result ok";
-    llmEl.testResult.textContent = `Работает: ${data.model} ответила за ${data.seconds} с:\n${data.answer}`;
+    llmEl.testResult.textContent = `${t("Работает: {model} ответила за {seconds} с:", { model: data.model, seconds: data.seconds })}\n${data.answer}`;
     refreshLlmModels().catch(() => {});
   } catch (error) {
     llmEl.testResult.className = "test-result bad";
-    llmEl.testResult.textContent = `Не получилось: ${error.message}`;
+    llmEl.testResult.textContent = t("Не получилось: {message}", { message: error.message });
   } finally {
     llmEl.test.disabled = false;
   }
@@ -236,9 +237,9 @@ const CAPABILITY_LABELS = {
 };
 
 function licenseBadge(engine) {
-  if (engine.commercial_use === true) return `<span class="badge ok">можно в коммерции</span>`;
-  if (engine.commercial_use === false) return `<span class="badge warn">только некоммерческое</span>`;
-  return `<span class="badge neutral">лицензия зависит от сервера</span>`;
+  if (engine.commercial_use === true) return `<span class="badge ok">${t("можно в коммерции")}</span>`;
+  if (engine.commercial_use === false) return `<span class="badge warn">${t("только некоммерческое")}</span>`;
+  return `<span class="badge neutral">${t("лицензия зависит от сервера")}</span>`;
 }
 
 function settingField(item, value, onChange) {
@@ -326,7 +327,9 @@ function createEnginePanel(root, section, listKey) {
         else if (type === "float") values[input.dataset.setting] = Number(input.value);
         else values[input.dataset.setting] = input.value;
       }
-      return { engine: engineId, device: device.value, engines: engineId ? { [engineId]: values } : {} };
+      const result = { engine: engineId, device: device.value, engines: engineId ? { [engineId]: values } : {} };
+      if (keepWarm) result.keepWarmMinutes = Math.max(0, Number(keepWarm.value || 0));
+      return result;
     },
     render() {
       const current = engineState.settings[section];
@@ -334,11 +337,15 @@ function createEnginePanel(root, section, listKey) {
       for (const engine of panel.list()) {
         const option = document.createElement("option");
         option.value = engine.id;
-        option.textContent = `${engine.name}${engine.status?.installed ? "" : " — не установлен"}`;
+        option.textContent = engine.status?.installed ? engine.name : t("{name} — не установлен", { name: engine.name });
         select.appendChild(option);
       }
       select.value = current.engine;
       device.value = current.device || "auto";
+      if (keepWarm) {
+        if (document.activeElement !== keepWarm) keepWarm.value = current.keepWarmMinutes ?? 10;
+        renderResident();
+      }
       panel.renderDetails();
     },
     renderDetails() {
@@ -346,24 +353,24 @@ function createEnginePanel(root, section, listKey) {
       settingsBox.innerHTML = "";
       install.innerHTML = "";
       if (!engine) {
-        info.textContent = "Движок не найден в папке engines/.";
-        badge(statusEl, "Нет", "bad");
+        info.textContent = t("Движок не найден в папке engines/.");
+        badge(statusEl, t("Нет"), "bad");
         return;
       }
       const languages = Array.isArray(engine.languages) ? engine.languages.join(", ") : (engine.languages || "");
       const capabilities = Object.entries(engine.supports || {})
         .filter(([, enabled]) => enabled)
-        .map(([key]) => `<span class="chip">${escapeHtml(CAPABILITY_LABELS[key] || key)}</span>`)
+        .map(([key]) => `<span class="chip">${escapeHtml(t(CAPABILITY_LABELS[key] || key))}</span>`)
         .join("");
       info.innerHTML = `
         <p>${escapeHtml(engine.description || "")}</p>
         ${capabilities ? `<div class="chip-row">${capabilities}</div>` : ""}
-        <div class="meta">Лицензия: ${escapeHtml(engine.license || "?")} ${licenseBadge(engine)}</div>
-        ${languages ? `<div class="meta">Языки: ${escapeHtml(languages)}</div>` : ""}
+        <div class="meta">${escapeHtml(t("Лицензия: {license}", { license: engine.license || "?" }))} ${licenseBadge(engine)}</div>
+        ${languages ? `<div class="meta">${escapeHtml(t("Языки: {languages}", { languages }))}</div>` : ""}
         ${engine.homepage ? `<div class="meta"><a href="${escapeHtml(engine.homepage)}" target="_blank" rel="noreferrer">${escapeHtml(engine.homepage)}</a></div>` : ""}
       `;
       const status = engine.status || {};
-      badge(statusEl, status.installed ? "Готов" : "Не установлен", status.installed ? "ok" : "warn");
+      badge(statusEl, status.installed ? t("Готов") : t("Не установлен"), status.installed ? "ok" : "warn");
       install.innerHTML = `
         <div class="section-title">Установка</div>
         <div class="meta">${escapeHtml(status.message || "")}${status.python ? `<br><code>${escapeHtml(status.python)}</code>` : ""}</div>
@@ -371,17 +378,17 @@ function createEnginePanel(root, section, listKey) {
       `;
       if (engine.runtime !== "main") {
         if (!status.installed && status.installable !== false) {
-          const installBtn = actionButton("Установить движок", () => installEngine(engine.id, engine));
+          const installBtn = actionButton(t("Установить движок"), () => installEngine(engine.id, engine));
           installBtn.className = "primary";
           installBtn.dataset.jobButton = "1";
           install.appendChild(installBtn);
         }
         const pythonRow = document.createElement("div");
         pythonRow.className = "input-action python-row";
-        pythonRow.innerHTML = `<input placeholder="Или путь к python.exe уже готового окружения с этой моделью">`;
+        pythonRow.innerHTML = `<input placeholder="${t("Или путь к python.exe уже готового окружения с этой моделью")}">`;
         const pythonInput = pythonRow.querySelector("input");
         pythonInput.value = status.source === "override" ? status.python : "";
-        pythonRow.appendChild(actionButton(status.source === "override" ? "Сохранить путь" : "Указать", async () => {
+        pythonRow.appendChild(actionButton(status.source === "override" ? t("Сохранить путь") : t("Указать"), async () => {
           try {
             const data = await postJson("/api/engines/python", { engine: engine.id, python: pythonInput.value.trim() });
             applySettingsPayload(data);
@@ -398,7 +405,7 @@ function createEnginePanel(root, section, listKey) {
       const basic = document.createElement("div");
       const advanced = document.createElement("details");
       advanced.className = "accordion";
-      advanced.innerHTML = "<summary>Дополнительные настройки движка</summary>";
+      advanced.innerHTML = `<summary>${t("Дополнительные настройки движка")}</summary>`;
       for (const item of engine.settings || []) {
         (item.advanced ? advanced : basic).appendChild(settingField(item, values[item.key], scheduleSettingsSave));
       }
@@ -410,7 +417,7 @@ function createEnginePanel(root, section, listKey) {
         voicesRow.className = "voices-row";
         const list = document.createElement("div");
         list.className = "chip-row";
-        voicesRow.appendChild(actionButton("Голоса сервера", async () => {
+        voicesRow.appendChild(actionButton(t("Голоса сервера"), async () => {
           try {
             await saveEngineSettings();
             const data = await postJson("/api/engines/voices", { engine: engine.id, settings: panel.values().engines[engine.id] });
@@ -434,19 +441,56 @@ function createEnginePanel(root, section, listKey) {
     },
   };
 
+  let keepWarm = null;
+  let residentStatus = null;
+  function renderResident() {
+    const loaded = (engineState.resident || []).filter((item) => item.loaded);
+    residentStatus.textContent = loaded.length
+      ? loaded.map((item) => (item.idle_left != null
+        ? t("{name}: загружена, выгрузится через {minutes} мин без работы", { name: item.name, minutes: Math.ceil(item.idle_left / 60) })
+        : t("{name}: загружена", { name: item.name }))).join("; ")
+      : t("Сейчас ни одна модель озвучки не загружена.");
+  }
+  if (section === "tts") {
+    const warm = document.createElement("div");
+    warm.className = "form-section";
+    warm.innerHTML = `
+      <div class="section-title">Держать модель загруженной</div>
+      <label class="field"><span>Минут после работы (0 — выгружать сразу)</span>
+        <input type="number" min="0" max="240" step="1" data-keep-warm></label>
+      <p class="meta" data-resident-status></p>
+      <div class="actions"><button type="button" class="secondary" data-release>Выгрузить модель сейчас</button></div>
+      <p class="hint">Пока модель загружена, переозвучка фразы и пробная фраза занимают секунды. Перед распознаванием и переводом на локальной модели она выгружается сама, чтобы освободить видеопамять.</p>
+    `;
+    body.insertBefore(warm, settingsBox);
+    keepWarm = warm.querySelector("[data-keep-warm]");
+    residentStatus = warm.querySelector("[data-resident-status]");
+    keepWarm.addEventListener("change", scheduleSettingsSave);
+    warm.querySelector("[data-release]").addEventListener("click", async () => {
+      try {
+        const data = await postJson("/api/engines/release", {});
+        applySettingsPayload(data);
+        renderResident();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  }
   if (section === "tts") {
     const test = document.createElement("div");
     test.className = "form-section";
     test.innerHTML = `
       <div class="section-title">Пробная фраза</div>
       <div class="row">
-        <label class="field wide"><span>Текст</span><input data-test-text value="Привет! Это проверка голоса."></label>
-        <label class="field"><span>Язык</span><input data-test-language value="ru" placeholder="ru, en, de, ..."></label>
+        <label class="field wide"><span>Текст</span><input data-test-text></label>
+        <label class="field"><span>Язык</span><input data-test-language placeholder="ru, en, de, ..."></label>
       </div>
       <div class="actions"><button type="button" class="primary" data-test-run data-job-button>▶ Озвучить пробную фразу</button></div>
       <audio data-test-player controls preload="none" hidden></audio>
     `;
     body.appendChild(test);
+    test.querySelector("[data-test-text]").value = t("Привет! Это проверка голоса.");
+    test.querySelector("[data-test-language]").value = UI_LANGUAGE;
     const player = test.querySelector("[data-test-player]");
     test.querySelector("[data-test-run]").addEventListener("click", async () => {
       try {
@@ -457,12 +501,13 @@ function createEnginePanel(root, section, listKey) {
           language: test.querySelector("[data-test-language]").value.trim(),
         });
         await refreshState();
-        const result = await waitForJobCompletion("engine_test", "Движок не смог озвучить фразу. Подробности в логе.");
+        const result = await waitForJobCompletion("engine_test", t("Движок не смог озвучить фразу. Подробности в логе."));
         if (result.name) {
           player.src = outputFileUrl(result.name);
           player.hidden = false;
           player.play().catch(() => {});
         }
+        await loadEngineSettings();  // the engine is warm now
       } catch (error) {
         alert(error.message);
       }
@@ -484,11 +529,12 @@ const enginePanels = [
 ];
 
 async function installEngine(engineId, engine) {
-  if (!confirm(`Установить «${engine?.name || engineId}»?\n\n${engine?.install_note || ""}\n\nПрогресс будет в логе внизу страницы.`)) return;
+  const question = t("Установить «{name}»?", { name: engine?.name || engineId });
+  if (!confirm(`${question}\n\n${engine?.install_note || ""}\n\n${t("Прогресс будет в логе внизу страницы.")}`)) return;
   try {
     await postJson("/api/engines/install", { engine: engineId });
     await refreshState();
-    await waitForJobCompletion("engine_install", "Установка не удалась. Подробности в логе.");
+    await waitForJobCompletion("engine_install", t("Установка не удалась. Подробности в логе."));
   } catch (error) {
     alert(error.message);
   } finally {
@@ -520,14 +566,20 @@ function renderEngineSummaries() {
   const settings = engineState.settings;
   if (!settings) return;
   const provider = providerById(settings.llm.provider);
-  const model = settings.llm.model || (provider.manage === "lmstudio" ? "загруженная модель" : "модель не выбрана");
+  const model = settings.llm.model || (provider.manage === "lmstudio" ? t("загруженная модель") : t("модель не выбрана"));
   const llmText = `${provider.label} · ${model}`;
   const engine = engineById(settings.tts.engine);
-  const ttsText = engine ? `${engine.name}${engine.status?.installed ? "" : " (не установлен)"}` : settings.tts.engine;
+  const ttsText = !engine ? settings.tts.engine
+    : engine.status?.installed ? engine.name : t("{name} (не установлен)", { name: engine.name });
   for (const element of document.querySelectorAll("[data-llm-summary]")) element.textContent = llmText;
   for (const element of document.querySelectorAll("[data-tts-summary]")) element.textContent = ttsText;
-  badge(llmBadge, `Перевод: ${provider.label}`, settings.llm.model || provider.manage === "lmstudio" ? "ok" : "warn");
+  badge(llmBadge, t("Перевод: {name}", { name: provider.label }), settings.llm.model || provider.manage === "lmstudio" ? "ok" : "warn");
   llmBadge.title = llmText;
-  badge(ttsBadge, `Озвучка: ${engine ? engine.name : settings.tts.engine}`, engine?.status?.installed ? "ok" : "bad");
+  badge(ttsBadge, t("Озвучка: {name}", { name: engine ? engine.name : settings.tts.engine }), engine?.status?.installed ? "ok" : "bad");
   ttsBadge.title = ttsText;
 }
+
+// Fresh engine status (installed, loaded models) whenever Settings opens.
+document.querySelector('.rail-item[data-view="settings"]').addEventListener("click", () => {
+  loadEngineSettings().catch(() => {});
+});

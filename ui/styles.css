@@ -940,6 +940,12 @@ button.model-row.selected {
   white-space: nowrap;
 }
 
+.rail-foot .language-switch {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
 .main {
   min-width: 0;
   padding: 24px 28px 96px;
@@ -1245,6 +1251,66 @@ input[type="range"] {
   text-transform: uppercase;
   background: var(--panel);
   border-top: 0;
+}
+
+.language-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.language-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  font-size: 13px;
+}
+
+.chip-remove {
+  min-height: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.language-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.language-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  background: var(--panel-alpha);
+}
+
+.language-tab.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.sample-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sample-switch .text-btn {
+  min-height: 0;
+  padding: 2px 6px;
 }
 
 .review-toolbar {

@@ -44,7 +44,7 @@ function uploadForm(url, formData, onProgress) {
       if (request.status >= 400 || data.ok === false) reject(new Error(data.error || request.statusText));
       else resolve(data);
     });
-    request.addEventListener("error", () => reject(new Error("Сервер недоступен.")));
+    request.addEventListener("error", () => reject(new Error(t("Сервер недоступен."))));
     request.send(formData);
   });
 }
@@ -139,7 +139,7 @@ function applyTheme(theme) {
   const selected = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = selected;
   themeToggle.setAttribute("aria-pressed", selected === "dark" ? "true" : "false");
-  themeLabel.textContent = selected === "dark" ? "Тёмная" : "Светлая";
+  themeLabel.textContent = selected === "dark" ? t("Тёмная") : t("Светлая");
 }
 
 themeToggle.addEventListener("click", () => {
@@ -188,11 +188,13 @@ function renderJob(job) {
 
   jobBar.hidden = !job.running;
   if (job.running) {
-    const label = JOB_LABELS[job.kind] || "Задача";
-    const stage = job.stage ? `Шаг ${job.stage.done} из ${job.stage.total}: ${job.stage.label}` : label;
+    const label = t(JOB_LABELS[job.kind] || "Задача");
+    const stage = job.stage
+      ? t("Шаг {done} из {total}: {label}", { done: job.stage.done, total: job.stage.total, label: t(job.stage.label) })
+      : label;
     jobBarStage.textContent = stage;
     const progress = job.progress;
-    jobBarDetail.textContent = progress ? `${progress.label} · ${Math.round((progress.done / progress.total) * 100)}%` : "";
+    jobBarDetail.textContent = progress ? `${t(progress.label)} · ${Math.round((progress.done / progress.total) * 100)}%` : "";
     let fraction = 0;
     if (job.stage) {
       const within = progress ? progress.done / progress.total : 0;
@@ -234,7 +236,7 @@ async function waitForJobCompletion(kind, failureMessage) {
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const state = await refreshState();
-    if (state.job.kind !== kind) throw new Error("Задачу заменила другая.");
+    if (state.job.kind !== kind) throw new Error(t("Задачу заменила другая."));
     if (state.job.running) continue;
     if (state.job.exit_code === 0) return state.job.result || {};
     throw new Error(failureMessage);

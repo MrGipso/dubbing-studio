@@ -29,6 +29,7 @@
       <div class="rail-foot">
         <button type="button" id="llmBadge" class="badge neutral badge-btn" data-open-engines title="Модель перевода">Перевод</button>
         <button type="button" id="ttsBadge" class="badge neutral badge-btn" data-open-engines title="Движок озвучки">Озвучка</button>
+        <select id="uiLanguage" class="language-switch" translate="no" aria-label="Язык интерфейса / Interface language" hidden></select>
         <button type="button" id="themeToggle" class="theme-toggle" aria-label="Переключить тему" aria-pressed="false">
           <span class="theme-toggle-track" aria-hidden="true"><span></span></span>
           <span id="themeLabel">Тема</span>
@@ -100,6 +101,8 @@
 
           <div id="projectError" class="error-banner" hidden></div>
 
+          <div id="languageTabs" class="language-tabs" hidden></div>
+
           <nav class="stepper" aria-label="Шаги">
             <button type="button" class="step active" data-step="source"><span class="step-num">1</span>Исходник</button>
             <button type="button" class="step" data-step="voice"><span class="step-num">2</span>Голос</button>
@@ -143,10 +146,12 @@
 <option value="Swahili">Суахили</option>
                     </select>
                   </label>
-                  <label class="field">
+                  <div class="field">
                     <span>Перевести на</span>
-                    <select id="projectTarget">
-<option value="English" selected>Английский</option>
+                    <div id="projectTargets" class="language-chips"></div>
+                    <select id="projectAddTarget">
+                      <option value="">+ Добавить язык…</option>
+<option value="English">Английский</option>
 <option value="Russian">Русский</option>
 <option value="Ukrainian">Украинский</option>
 <option value="Spanish">Испанский</option>
@@ -172,7 +177,7 @@
 <option value="Malay">Малайский</option>
 <option value="Swahili">Суахили</option>
                     </select>
-                  </label>
+                  </div>
                 </div>
                 <label class="inline-check">
                   <input type="checkbox" id="projectSeparate" checked>
@@ -185,7 +190,7 @@
                   <button type="button" class="text-btn" data-open-engines>Изменить</button>
                 </div>
                 <div class="actions">
-                  <button type="button" class="primary" data-run-stage="prepare" data-job-button>▶ Распознать и перевести</button>
+                  <button type="button" class="primary" id="prepareBtn" data-run-stage="prepare" data-job-button>▶ Распознать и перевести</button>
                   <button type="button" class="secondary" data-run-stage="all" data-job-button>Сделать всё сразу</button>
                 </div>
                 <p id="prepareSummary" class="hint"></p>
@@ -300,7 +305,7 @@
 
           <details class="panel accordion project-log">
             <summary>Подробности (лог)</summary>
-            <pre id="projectLog" data-job-log></pre>
+            <pre id="projectLog" data-job-log translate="no"></pre>
           </details>
         </div>
       </section>
@@ -590,7 +595,7 @@
             <h2>Лог</h2>
             <span id="translationRuntime" class="muted">00:00</span>
           </div>
-          <pre id="translationLog" data-job-log></pre>
+          <pre id="translationLog" data-job-log translate="no"></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -801,7 +806,7 @@
             <h2>Лог</h2>
             <span id="scriptRuntime" class="muted">00:00</span>
           </div>
-          <pre id="scriptLog" data-job-log></pre>
+          <pre id="scriptLog" data-job-log translate="no"></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -898,7 +903,7 @@
             <h2>Лог</h2>
             <span id="transcriptionRuntime" class="muted">00:00</span>
           </div>
-          <pre id="transcriptionLog" data-job-log></pre>
+          <pre id="transcriptionLog" data-job-log translate="no"></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -1120,7 +1125,7 @@
             <h2>Лог</h2>
             <span id="cleanRuntime" class="muted">00:00</span>
           </div>
-          <pre id="cleanLog" data-job-log></pre>
+          <pre id="cleanLog" data-job-log translate="no"></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -1182,7 +1187,7 @@
             <h2>Лог</h2>
             <span id="musicRuntime" class="muted">00:00</span>
           </div>
-          <pre id="musicLog" data-job-log></pre>
+          <pre id="musicLog" data-job-log translate="no"></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -1252,7 +1257,7 @@
               <button type="button" id="llmTestBtn" class="primary">Проверить подключение</button>
               <button type="button" id="llmUnloadBtn" class="secondary">Выгрузить модели</button>
             </div>
-            <pre id="llmTestResult" class="test-result" hidden></pre>
+            <pre id="llmTestResult" class="test-result" translate="no" hidden></pre>
           </form>
 
           <div class="panel controls" id="ttsPanel" data-engine-panel="tts">
@@ -1310,7 +1315,7 @@
             <div class="panel-head">
               <h2>Лог</h2>
             </div>
-            <pre id="settingsLog" data-job-log></pre>
+            <pre id="settingsLog" data-job-log translate="no"></pre>
           </section>
         </div>
       </section>
@@ -1329,9 +1334,11 @@
       <h2 id="previewTitle">Preview</h2>
       <button type="button" id="closePreview" class="icon-btn" title="Закрыть">×</button>
     </div>
-    <pre id="previewText"></pre>
+    <pre id="previewText" translate="no"></pre>
   </dialog>
 
+  <script src="/locale.js"></script>
+  <script src="/i18n.js"></script>
   <script src="/core.js"></script>
   <script src="/settings.js"></script>
   <script src="/tools.js"></script>

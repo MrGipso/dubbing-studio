@@ -70,23 +70,23 @@ function renderOutputList(container, countElement, files) {
     row.className = audio ? "file-row audio-row" : "file-row";
     row.innerHTML = `
       <div>
-        <strong>${escapeHtml(file.name)}</strong>
+        <strong translate="no">${escapeHtml(file.name)}</strong>
         <div class="meta">${escapeHtml(file.kind.toUpperCase())} · ${formatBytes(file.size)} · ${new Date(file.mtime * 1000).toLocaleString()}</div>
         <div class="download-actions"></div>
       </div>
-      ${audio ? `<audio controls preload="none" src="${outputFileUrl(file.name)}"></audio>` : `<button type="button">Открыть</button>`}
+      ${audio ? `<audio controls preload="none" src="${outputFileUrl(file.name)}"></audio>` : `<button type="button">${t("Открыть")}</button>`}
     `;
     const button = row.querySelector(":scope > button");
     if (button) button.addEventListener("click", () => preview(file.name));
     const actions = row.querySelector(".download-actions");
     if (audio && file.name.toLowerCase().endsWith(".wav")) {
-      actions.appendChild(actionButton("Настроить обработку", () => {
+      actions.appendChild(actionButton(t("Настроить обработку"), () => {
         const path = `outputs\\${file.name}`;
         field("cleanWavInput").value = path;
         updateCleanPreview(path, "original");
         showSection("clean");
       }));
-      actions.appendChild(actionButton("Быстро очистить", () => cleanOutputWav(file.name)));
+      actions.appendChild(actionButton(t("Быстро очистить"), () => cleanOutputWav(file.name)));
     }
     container.appendChild(row);
   }
@@ -128,7 +128,7 @@ async function transcribeReference({ audioField, textField, button, missingMessa
   try {
     await postJson("/api/transcribe-reference", payload);
     await refreshState();
-    const result = await waitForJobCompletion("reference_transcribe", "Не удалось распознать образец. Подробности в логе.");
+    const result = await waitForJobCompletion("reference_transcribe", t("Не удалось распознать образец. Подробности в логе."));
     field(textField).value = result.text || "";
   } catch (error) {
     alert(error.message);
@@ -139,11 +139,11 @@ async function transcribeReference({ audioField, textField, button, missingMessa
 
 document.getElementById("transcribeTranslateRefBtn").addEventListener("click", (event) => transcribeReference({
   audioField: "translateRefAudio", textField: "translateRefText", button: event.currentTarget,
-  missingMessage: "Сначала выберите образец голоса.",
+  missingMessage: t("Сначала выберите образец голоса."),
 }));
 document.getElementById("transcribeScriptRefBtn").addEventListener("click", (event) => transcribeReference({
   audioField: "scriptRefAudio", textField: "scriptRefText", button: event.currentTarget,
-  missingMessage: "Сначала выберите образец голоса.",
+  missingMessage: t("Сначала выберите образец голоса."),
 }));
 
 // ---------------------------------------------------------------- translate text + voice
@@ -163,7 +163,7 @@ function updateVoiceSourceMode() {
 async function fillLatestTranslationsJson(showMissingAlert = true) {
   const data = await api("/api/latest-translations");
   if (!data.path) {
-    if (showMissingAlert) alert("Готовый перевод (.translations.json) не найден.");
+    if (showMissingAlert) alert(t("Готовый перевод (.translations.json) не найден."));
     return "";
   }
   field("translateVoiceJson").value = data.path;
@@ -186,15 +186,15 @@ document.getElementById("translationBtn").addEventListener("click", async (event
   try {
     const payload = toolValues();
     if (!String(payload.translateText || "").trim()) {
-      alert("Вставьте текст для перевода.");
+      alert(t("Вставьте текст для перевода."));
       return;
     }
     syncTranslationTargetToVoiceLanguage();
     const originalText = button.textContent;
-    button.textContent = "Перевожу...";
+    button.textContent = t("Перевожу...");
     try {
       await runToolJob("/api/run-text-translation", payload);
-      await waitForJobCompletion("text_translation", "Перевод не удался. Подробности в логе.");
+      await waitForJobCompletion("text_translation", t("Перевод не удался. Подробности в логе."));
       await fillLatestTranslationsJson(false);
     } finally {
       button.textContent = originalText;
@@ -209,13 +209,13 @@ document.getElementById("translationVoiceBtn").addEventListener("click", async (
     const payload = toolValues();
     if (payload.translateVoiceSource === "direct") {
       if (!String(payload.translateVoiceText || "").trim()) {
-        alert("Вставьте готовый текст для озвучки.");
+        alert(t("Вставьте готовый текст для озвучки."));
         return;
       }
     } else if (!payload.translateVoiceJson) {
       payload.translateVoiceJson = await fillLatestTranslationsJson(false);
       if (!payload.translateVoiceJson) {
-        alert("Сначала переведите текст или выберите .translations.json.");
+        alert(t("Сначала переведите текст или выберите .translations.json."));
         return;
       }
     }
@@ -230,7 +230,7 @@ document.getElementById("translationVoiceBtn").addEventListener("click", async (
 async function fillLatestScriptJsonl(showMissingAlert = true) {
   const data = await api("/api/latest-script-jsonl");
   if (!data.path) {
-    if (showMissingAlert) alert("Готовый план озвучки сценария (.script.dub.jsonl) не найден.");
+    if (showMissingAlert) alert(t("Готовый план озвучки сценария (.script.dub.jsonl) не найден."));
     return "";
   }
   field("scriptJsonl").value = data.path;
@@ -246,14 +246,14 @@ document.getElementById("scriptPrepareBtn").addEventListener("click", async (eve
   try {
     const payload = toolValues();
     if (!String(payload.scriptText || "").trim()) {
-      alert("Вставьте готовый сценарий.");
+      alert(t("Вставьте готовый сценарий."));
       return;
     }
     const originalText = button.textContent;
-    button.textContent = "Готовлю...";
+    button.textContent = t("Готовлю...");
     try {
       await runToolJob("/api/run-script-prepare", payload);
-      await waitForJobCompletion("script_prepare", "Подготовка сценария не удалась. Подробности в логе.");
+      await waitForJobCompletion("script_prepare", t("Подготовка сценария не удалась. Подробности в логе."));
       await fillLatestScriptJsonl(false);
     } finally {
       button.textContent = originalText;
@@ -268,7 +268,7 @@ document.getElementById("scriptVoiceBtn").addEventListener("click", async () => 
     const payload = toolValues();
     if (!payload.scriptJsonl) payload.scriptJsonl = await fillLatestScriptJsonl(false);
     if (!payload.scriptJsonl) {
-      alert("Сначала подготовьте сценарий или выберите .script.dub.jsonl.");
+      alert(t("Сначала подготовьте сценарий или выберите .script.dub.jsonl."));
       return;
     }
     await runToolJob("/api/run-script-voice", payload);
@@ -283,7 +283,7 @@ document.getElementById("transcriptionBtn").addEventListener("click", async () =
   try {
     const payload = toolValues();
     if (!payload.transcribeVideo && !payload.transcribeAudio) {
-      alert("Выберите видео или аудио для транскрибации.");
+      alert(t("Выберите видео или аудио для транскрибации."));
       return;
     }
     await runToolJob("/api/run-transcription", payload);
@@ -361,7 +361,7 @@ document.getElementById("useLatestCleanWavBtn").addEventListener("click", async 
   try {
     const data = await api("/api/latest-audio");
     if (!data.path) {
-      alert("Готовый WAV не найден.");
+      alert(t("Готовый WAV не найден."));
       return;
     }
     field("cleanWavInput").value = data.path;
@@ -380,7 +380,7 @@ document.getElementById("cleanWavBtn").addEventListener("click", async () => {
       if (data.path) field("cleanWavInput").value = payload.cleanWavInput = data.path;
     }
     if (!String(payload.cleanWavInput || "").trim()) {
-      alert("Выберите WAV для обработки.");
+      alert(t("Выберите WAV для обработки."));
       return;
     }
     updateCleanPreview(payload.cleanWavInput, "original");
@@ -415,7 +415,7 @@ document.getElementById("cleanWavBtn").addEventListener("click", async () => {
       roomMix: payload.cleanWavRoomMix,
       normalize: payload.cleanWavNormalize,
     });
-    const result = await waitForJobCompletion("wav_clean", "Обработка не удалась. Подробности в логе.");
+    const result = await waitForJobCompletion("wav_clean", t("Обработка не удалась. Подробности в логе."));
     if (result.wav) {
       updateCleanPreview(result.wav, "result");
       field("cleanWavOutput").value = result.wav;
@@ -439,7 +439,7 @@ document.getElementById("useLatestAudioBtn").addEventListener("click", async () 
   try {
     const data = await api("/api/latest-audio");
     if (!data.path) {
-      alert("Готовый аудиофайл не найден.");
+      alert(t("Готовый аудиофайл не найден."));
       return;
     }
     field("musicVoiceAudio").value = data.path;

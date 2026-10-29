@@ -6,6 +6,7 @@ import mimetypes
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -14,10 +15,12 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import i18n
 import llm_client
 import project as projects
 import tts_engines
 from app_settings import llm_script_args, load_settings, save_settings
+from i18n import tr
 from languages import LANGUAGE_NAMES_BY_ID
 
 
@@ -26,7 +29,6 @@ UI_DIR = ROOT / "ui"
 OUTPUTS_DIR = ROOT / "outputs"
 INPUTS_DIR = ROOT / "inputs"
 CONFIG_DIR = ROOT / "config"
-POWERSHELL = os.environ.get("PIPELINE_UI_PWSH", "powershell.exe")
 
 
 
@@ -124,6 +126,7 @@ def job_environment():
     """Environment for child processes: UTF-8 logs and the LLM key (never on the command line)."""
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
+    env[i18n.LANGUAGE_ENV] = i18n.language()
     llm = load_settings()["llm"]
     api_key = llm_client.stored_api_key(str(llm.get("provider") or ""))
     if api_key:
@@ -131,17 +134,44 @@ def job_environment():
     return env
 
 
+def localized(item, keys):
+    """Translate the user-facing texts of an engine manifest or provider preset."""
+    for key in keys:
+        if isinstance(item.get(key), str):
+            item[key] = tr(item[key])
+    return item
+
+
 def engines_payload(kind="tts"):
     engines = tts_engines.list_engines(kind=kind)
     for manifest in engines:
         if "id" in manifest and "settings" in manifest:
             manifest["values"] = tts_engines.resolve_settings(manifest)
+        localized(manifest, ("name", "description", "license", "install_note", "languages"))
+        for item in manifest.get("settings") or []:
+            localized(item, ("label", "help"))
     return engines
+
+
+def ui_language_from(handler):
+    """Saved interface language, or the browser's one when it was never chosen."""
+    saved = i18n.normalize(load_settings()["ui"].get("language"))
+    return saved or i18n.from_accept_language(handler.headers.get("Accept-Language"))
+
+
+def locale_script(code):
+    """JS that defines the interface language and its dictionary before the other scripts run."""
+    payload = {
+        "language": code,
+        "languages": i18n.available_languages(),
+        "messages": i18n.catalog(code),
+    }
+    return f"window.I18N = {json.dumps(payload, ensure_ascii=False)};\n".encode("utf-8")
 
 
 def settings_payload():
     settings = load_settings()
-    providers = list(llm_client.load_providers().values())
+    providers = [localized(dict(item), ("label", "hint")) for item in llm_client.load_providers().values()]
     keys = {item["id"]: llm_client.mask_key(llm_client.stored_api_key(item["id"])) for item in providers}
     return {
         "settings": settings,
@@ -149,6 +179,7 @@ def settings_payload():
         "keys": keys,
         "engines": engines_payload("tts"),
         "separators": engines_payload("separator"),
+        "resident": tts_engines.resident_status(),
     }
 
 
@@ -409,7 +440,10 @@ def terminate_process_tree(process):
             text=True,
         )
         return
-    process.terminate()
+    try:
+        os.killpg(process.pid, signal.SIGTERM)  # the job runs in its own session
+    except (OSError, ProcessLookupError):
+        process.terminate()
 
 
 
@@ -421,33 +455,19 @@ def build_reference_transcribe_command(payload):
     if not Path(audio).is_file():
         raise ValueError(f"Reference audio was not found: {audio}")
 
+    asr = load_settings()["asr"]
     output_dir = str(payload.get("outputDir") or "outputs")
-    whisper_model = str(payload.get("whisperModel") or "medium")
-    whisper_device = str(payload.get("whisperDevice") or "cuda")
-    whisper_compute_type = str(payload.get("whisperComputeType") or "float16")
     output_prefix = f"ref_{default_output_prefix(audio)}"
-    script = ROOT / "run_whisper.ps1"
     command = [
-        POWERSHELL,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(script),
-        "-Audio",
+        sys.executable or "python",
+        str(ROOT / "transcribe.py"),
         audio,
-        "-Model",
-        whisper_model,
-        "-Language",
-        "auto",
-        "-OutputDir",
-        output_dir,
-        "-Device",
-        whisper_device,
-        "-ComputeType",
-        whisper_compute_type,
-        "-OutputPrefix",
-        output_prefix,
+        "--model", str(payload.get("whisperModel") or asr.get("model") or "medium"),
+        "--language", "auto",
+        "--device", str(payload.get("whisperDevice") or asr.get("device") or "cuda"),
+        "--compute-type", str(payload.get("whisperComputeType") or asr.get("computeType") or "float16"),
+        "--output-dir", output_dir,
+        "--output-prefix", output_prefix,
     ]
     txt_path = ROOT / output_dir / (output_prefix + ".txt")
     return command, txt_path
@@ -542,6 +562,9 @@ def build_clean_wav_command(payload):
     mode = str(payload.get("mode") or "soft").strip().lower()
     if mode not in {"soft", "normal", "hard"}:
         mode = "soft"
+    preset = str(payload.get("preset") or "custom")
+    if preset not in {"custom", "clean", "youtube", "dense", "soft", "radio"}:
+        preset = "custom"
 
     def payload_float(name, default):
         value = payload.get(name)
@@ -550,67 +573,34 @@ def build_clean_wav_command(payload):
         return float(value)
 
     command = [
-        POWERSHELL,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(ROOT / "run_clean_wav.ps1"),
-        "-InputPath",
-        str(file_path),
-        "-Output",
-        str(output_path),
-        "-Mode",
-        mode,
-        "-MinPause",
-        str(float(payload.get("minPause") or 0.15)),
-        "-FadeMs",
-        str(payload_float("fadeMs", 40.0)),
-        "-Preset",
-        str(payload.get("preset") or "custom"),
-        "-Amount",
-        str(payload_float("amount", 55.0)),
-        "-DeesserFreq",
-        str(payload_float("deesserFreq", 5200.0)),
-        "-DeesserStrength",
-        str(payload_float("deesserStrength", 55.0)),
-        "-EqMudDb",
-        str(payload_float("eqMudDb", -1.8)),
-        "-EqClarityDb",
-        str(payload_float("eqClarityDb", 2.2)),
-        "-EqAirDb",
-        str(payload_float("eqAirDb", 1.1)),
-        "-CompThreshold",
-        str(payload_float("compThreshold", -20.0)),
-        "-CompRatio",
-        str(payload_float("compRatio", 3.0)),
-        "-CompMakeup",
-        str(payload_float("compMakeup", 2.2)),
-        "-SatDrive",
-        str(payload_float("satDrive", 45.0)),
-        "-SatMix",
-        str(payload_float("satMix", 28.0)),
-        "-LimiterCeiling",
-        str(payload_float("limiterCeiling", 0.95)),
-        "-LoudnessTarget",
-        str(payload_float("loudnessTarget", -16.0)),
-        "-RoomMix",
-        str(payload_float("roomMix", 10.0)),
+        sys.executable or "python",
+        str(ROOT / "clean_wav.py"),
+        "--input", str(file_path),
+        "--output", str(output_path),
+        "--mode", mode,
+        "--min-pause", str(float(payload.get("minPause") or 0.15)),
+        "--fade-ms", str(payload_float("fadeMs", 40.0)),
+        "--preset", preset,
+        "--amount", str(payload_float("amount", 55.0)),
+        "--deesser-freq", str(payload_float("deesserFreq", 5200.0)),
+        "--deesser-strength", str(payload_float("deesserStrength", 55.0)),
+        "--eq-mud-db", str(payload_float("eqMudDb", -1.8)),
+        "--eq-clarity-db", str(payload_float("eqClarityDb", 2.2)),
+        "--eq-air-db", str(payload_float("eqAirDb", 1.1)),
+        "--comp-threshold", str(payload_float("compThreshold", -20.0)),
+        "--comp-ratio", str(payload_float("compRatio", 3.0)),
+        "--comp-makeup", str(payload_float("compMakeup", 2.2)),
+        "--sat-drive", str(payload_float("satDrive", 45.0)),
+        "--sat-mix", str(payload_float("satMix", 28.0)),
+        "--limiter-ceiling", str(payload_float("limiterCeiling", 0.95)),
+        "--loudness-target", str(payload_float("loudnessTarget", -16.0)),
+        "--room-mix", str(payload_float("roomMix", 10.0)),
     ]
     if payload.get("normalize"):
-        command.append("-Normalize")
-    effect_switches = {
-        "deesser": "-Deesser",
-        "eq": "-Eq",
-        "compressor": "-Compressor",
-        "saturation": "-Saturation",
-        "limiter": "-Limiter",
-        "loudness": "-Loudness",
-        "room": "-Room",
-    }
-    for key, flag in effect_switches.items():
+        command.append("--normalize")
+    for key in ("deesser", "eq", "compressor", "saturation", "limiter", "loudness", "room"):
         if payload.get(key):
-            command.append(flag)
+            command.append(f"--{key}")
     return command, output_path
 
 
@@ -630,22 +620,15 @@ def build_music_mix_command(payload):
 
     volume_db = max(-30.0, min(0.0, float(payload.get("musicVolumeDb") or -18.0)))
     command = [
-        POWERSHELL,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(ROOT / "run_music_mix.ps1"),
-        "-VoiceAudio",
-        voice_audio,
-        "-MusicAudio",
-        music_audio,
-        "-MusicVolumeDb",
-        str(volume_db),
+        sys.executable or "python",
+        str(ROOT / "mix_music.py"),
+        "--voice-audio", voice_audio,
+        "--music-audio", music_audio,
+        "--music-volume-db", str(volume_db),
     ]
     output = str(payload.get("musicOutput") or "").strip()
     if output:
-        command.extend(["-Output", output])
+        command.extend(["--output", output])
     return command
 
 
@@ -658,33 +641,20 @@ def build_transcription_command(payload):
     if not Path(media).is_file():
         raise ValueError(f"Media file was not found: {media}")
 
-    command = [
-        POWERSHELL,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(ROOT / "run_transcription.ps1"),
-        "-Media",
+    # faster-whisper decodes video files directly (PyAV), no extraction step needed.
+    asr = load_settings()["asr"]
+    output_prefix = str(payload.get("transcribeOutputPrefix") or "").strip() or default_output_prefix(media)
+    return [
+        sys.executable or "python",
+        str(ROOT / "transcribe.py"),
         media,
-        "-Model",
-        str(payload.get("transcribeModel") or "medium"),
-        "-Language",
-        str(payload.get("transcribeLanguage") or "ru"),
-        "-OutputDir",
-        str(payload.get("transcribeOutputDir") or "outputs"),
-        "-Device",
-        str(payload.get("transcribeDevice") or "cuda"),
-        "-ComputeType",
-        str(payload.get("transcribeComputeType") or "float16"),
+        "--model", str(payload.get("transcribeModel") or asr.get("model") or "medium"),
+        "--language", str(payload.get("transcribeLanguage") or "auto"),
+        "--device", str(payload.get("transcribeDevice") or asr.get("device") or "cuda"),
+        "--compute-type", str(payload.get("transcribeComputeType") or asr.get("computeType") or "float16"),
+        "--output-dir", str(payload.get("transcribeOutputDir") or "outputs"),
+        "--output-prefix", output_prefix,
     ]
-
-    output_prefix = str(payload.get("transcribeOutputPrefix") or "").strip()
-    if output_prefix:
-        command.extend(["-OutputPrefix", output_prefix])
-    if payload.get("keepExtractedAudio"):
-        command.append("-KeepExtractedAudio")
-    return command
 
 
 def safe_output_prefix(value, fallback):
@@ -982,6 +952,7 @@ def start_job(command, kind, on_complete=None, meta=None):
             errors="replace",
             env=job_environment(),
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            start_new_session=os.name != "nt",  # lets Stop kill the whole job on macOS/Linux
         )
 
         with JOB.lock:
@@ -1104,29 +1075,50 @@ def project_detail(directory):
     data = projects.load_project(directory)
     project_id = data["id"]
     work = directory / "work"
+
+    def file_entry(relative):
+        if relative and (directory / relative).is_file():
+            return {"path": relative, "url": project_file_url(project_id, relative), "name": Path(relative).name}
+        return None
+
     files = {}
-    candidates = {
+    shared = {
         "source": (data.get("source") or {}).get("file", ""),
         "vocals": "work/vocals.wav" if (work / "vocals.wav").is_file() else "",
         "background": "work/background.wav" if (work / "background.wav").is_file() else "",
         "sample": data["voice"].get("auto_file", ""),
         "uploaded_sample": data["voice"].get("file", ""),
         "music": data["mix"].get("music_file", ""),
-        "voice_track": data.get("voice_track", ""),
-        "mix_track": data.get("mix_track", ""),
-        "video": data.get("video", ""),
-        "subtitles": data.get("subtitles", ""),
     }
-    for key, relative in candidates.items():
-        if relative and (directory / relative).is_file():
-            files[key] = {"path": relative, "url": project_file_url(project_id, relative), "name": Path(relative).name}
+    for key, relative in shared.items():
+        entry = file_entry(relative)
+        if entry:
+            files[key] = entry
 
+    languages = []
+    for target in data["targets"]:
+        item = projects.track(data, target)
+        language_files = {key: file_entry(item.get(key)) for key in projects.TRACK_FILES}
+        languages.append({
+            "name": target,
+            "code": projects.code_for(target),
+            "translated": item["translated"],
+            "voiced": item["voiced"],
+            "exported": item["exported"],
+            "dirty": len(item.get("dirty") or []),
+            "files": {key: value for key, value in language_files.items() if value},
+        })
+        if target == data["active"]:
+            files.update({key: value for key, value in language_files.items() if value})
+
+    active = data["active"]
+    active_track = projects.track(data, active)
     segments = []
-    report = projects.phrase_report(directory, data)
-    phrase_dir = projects.segments_dir(directory, data)
-    edited = set(data.get("edited") or [])
-    dirty = set(data.get("dirty") or [])
-    for unit in projects.load_units(directory, data):
+    report = projects.phrase_report(directory, data, active)
+    phrase_dir = projects.segments_dir(directory, active)
+    edited = set(active_track.get("edited") or [])
+    dirty = set(active_track.get("dirty") or [])
+    for unit in projects.load_units(directory, active):
         key = projects.unit_key(unit["id"])
         item_report = report.get(key) or {}
         phrase_wav = phrase_dir / f"{key}.wav"
@@ -1148,16 +1140,19 @@ def project_detail(directory):
     settings = load_settings()
     separator = next((item for item in tts_engines.list_engines(kind="separator")
                       if item.get("id") == settings["separation"].get("engine")), None)
+    snapshot = JOB.snapshot()
     return {
         **data,
         "files": files,
+        "languages": languages,
+        "active_track": {key: active_track[key] for key in ("translated", "voiced", "exported", "edited", "dirty")},
         "segments": segments,
         "separator": {
             "id": (separator or {}).get("id"),
             "name": (separator or {}).get("name"),
             "installed": bool((separator or {}).get("status", {}).get("installed")),
         },
-        "running_job": JOB.snapshot()["meta"].get("project") == project_id and JOB.snapshot()["running"],
+        "running_job": snapshot["meta"].get("project") == project_id and snapshot["running"],
     }
 
 
@@ -1166,7 +1161,7 @@ def create_project_upload(handler):
 
     def destination(name, fields):
         if Path(name).suffix.lower() not in MEDIA_UPLOAD_SUFFIXES:
-            raise ValueError("Нужен видео- или аудиофайл (mp4, mov, mkv, webm, wav, mp3, ...).")
+            raise ValueError(tr("Нужен видео- или аудиофайл (mp4, mov, mkv, webm, wav, mp3, ...)."))
         directory = projects.new_project(str(fields.get("name") or ""), name)
         holder["dir"] = directory
         return directory / "source" / safe_upload_name(name, "source")
@@ -1174,7 +1169,12 @@ def create_project_upload(handler):
     try:
         source_path, fields = receive_upload(handler, destination)
         data = projects.attach_source(holder["dir"], source_path)
-        changes = {key: fields[key] for key in ("target", "source_language") if fields.get(key)}
+        changes = {}
+        targets = [value.strip() for value in str(fields.get("targets") or fields.get("target") or "").split(",") if value.strip()]
+        if targets:
+            changes.update(targets=targets, active=targets[0])
+        if fields.get("source_language"):
+            changes["source_language"] = fields["source_language"]
         if changes:
             data = projects.update_project(holder["dir"], changes)
         return data
@@ -1190,7 +1190,7 @@ def project_upload(handler, directory, kind):
 
     def destination(name, fields):
         if Path(name).suffix.lower() not in projects.AUDIO_SUFFIXES | projects.VIDEO_SUFFIXES:
-            raise ValueError("Нужен аудиофайл.")
+            raise ValueError(tr("Нужен аудиофайл."))
         folder = "voice" if kind == "voice" else "source"
         return directory / folder / f"{kind}_{int(time.time())}{Path(safe_upload_name(name)).suffix}"
 
@@ -1201,19 +1201,23 @@ def project_upload(handler, directory, kind):
     return projects.update_project(directory, {"mix": {"music_file": relative}})
 
 
-def start_project_job(directory, stage_name, ids=None):
-    if stage_name not in projects.PLAN:
+def start_project_job(directory, stage_name, ids=None, targets=None):
+    if stage_name not in projects.STAGES:
         raise ValueError(f"Unknown stage: {stage_name}")
     project_id = directory.name
     ids = [int(value) for value in ids or []]
+    targets = [str(value) for value in targets or []]
     command = [sys.executable or "python", str(ROOT / "project.py"), "run", str(directory), stage_name]
     if ids:
         command += ["--ids", ",".join(str(value) for value in ids)]
+    if targets:
+        command += ["--targets", ",".join(targets)]
 
     def on_complete():
         return {"project": project_id, "stage": stage_name}
 
-    start_job(command, "project", on_complete=on_complete, meta={"project": project_id, "stage": stage_name, "ids": ids})
+    start_job(command, "project", on_complete=on_complete,
+              meta={"project": project_id, "stage": stage_name, "ids": ids, "targets": targets})
 
 
 def open_folder(path):
@@ -1261,11 +1265,14 @@ def handle_project_post(handler, parsed):
         project_upload(handler, directory, parse_qs(parsed.query).get("kind", [""])[0])
     elif action == "run":
         payload = read_json(handler)
-        start_project_job(directory, str(payload.get("stage") or "all"), payload.get("ids"))
+        start_project_job(directory, str(payload.get("stage") or "all"), payload.get("ids"), payload.get("targets"))
     elif action == "phrases":
         payload = read_json(handler)
         data = projects.load_project(directory)
-        projects.set_translations(directory, data, {int(key): value for key, value in (payload.get("translations") or {}).items()})
+        projects.set_translations(directory, data, {int(key): value for key, value in (payload.get("translations") or {}).items()},
+                                  payload.get("target") or None)
+    elif action == "sample":
+        projects.choose_sample(directory, int(read_json(handler).get("index") or 0))
     elif action == "delete":
         projects.delete_project(directory)
         json_response(handler, {"ok": True, "projects": projects.list_projects()})
@@ -1307,6 +1314,17 @@ class Handler(BaseHTTPRequestHandler):
             )
         if path == "/api/settings":
             return json_response(self, {"ok": True, **settings_payload()})
+        if path == "/locale.js":
+            code = ui_language_from(self)
+            i18n.set_language(code)  # server messages and new jobs follow the page language
+            content = locale_script(code)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(content)
+            return
         if path == "/api/projects":
             return json_response(self, {"ok": True, "projects": projects.list_projects()})
         if path.startswith("/api/projects/"):
@@ -1421,7 +1439,10 @@ class Handler(BaseHTTPRequestHandler):
                 return json_response(self, {"ok": True, "job": JOB.snapshot()})
             if parsed.path == "/api/settings":
                 payload = read_json(self)
-                save_settings(payload)
+                saved = save_settings(payload)
+                if isinstance(payload.get("ui"), dict) and "language" in payload["ui"]:
+                    i18n.set_language(i18n.normalize(saved["ui"]["language"])
+                                      or i18n.from_accept_language(self.headers.get("Accept-Language")))
                 return json_response(self, {"ok": True, **settings_payload()})
             if parsed.path == "/api/llm/key":
                 payload = read_json(self)
@@ -1436,7 +1457,7 @@ class Handler(BaseHTTPRequestHandler):
                 started = time.time()
                 client.prepare()
                 answer = client.complete(
-                    [{"role": "user", "content": "Translate to English and answer with the translation only: Привет, мир!"}],
+                    [{"role": "user", "content": "Translate to English and answer with the translation only: Привет, мир!"}],  # i18n-ignore: test prompt
                     temperature=0.0,
                     timeout=180,
                     max_tokens=60,
@@ -1451,6 +1472,9 @@ class Handler(BaseHTTPRequestHandler):
                 payload = read_json(self)
                 llm_from_payload(payload).unload_all()
                 return json_response(self, {"ok": True})
+            if parsed.path == "/api/engines/release":
+                stopped = tts_engines.stop_resident(read_json(self).get("engine") or None)
+                return json_response(self, {"ok": True, "stopped": stopped, **settings_payload()})
             if parsed.path == "/api/engines/install":
                 payload = read_json(self)
                 start_engine_install_job(payload)
@@ -1488,10 +1512,16 @@ def main():
     parser = argparse.ArgumentParser(description="Local UI for the timed translation pipeline.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8768)
+    parser.add_argument("--open", action="store_true", help="Open the UI in the default browser.")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"Pipeline UI: http://{args.host}:{args.port}", flush=True)
+    url = f"http://{args.host}:{args.port}"
+    print(f"Dubbing Studio: {url}", flush=True)
+    if args.open:
+        import webbrowser
+
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     server.serve_forever()
 
 
