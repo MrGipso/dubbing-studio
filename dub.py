@@ -16,6 +16,7 @@ Examples:
 """
 
 import argparse
+import contextlib
 import json
 import math
 import shutil
@@ -362,6 +363,7 @@ def main():
     parser.add_argument("--post-min-pause", type=float, default=0.15, help="Minimum silence kept around cleaned speech, seconds.")
     parser.add_argument("--post-normalize", action="store_true", help="Peak-normalize final WAV after cleanup.")
     parser.add_argument("--keep-segments", action="store_true")
+    parser.add_argument("--only", default="", help="Comma-separated phrase ids to re-voice; other phrases reuse their saved WAV in --segments-dir.")
     args = parser.parse_args()
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -381,13 +383,42 @@ def main():
     segments_dir.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Engine: {manifest['name']} | device: {device} | settings: {json.dumps(settings, ensure_ascii=False)}", flush=True)
-    with EngineSession(engine_id) as session, tempfile.TemporaryDirectory(prefix="dub_") as tmp:
-        session.load(settings, device)
-        synth = Synthesizer(session, manifest, args, Path(tmp))
-        sample_rate = synth.sample_rate
-        if not manifest.get("supports", {}).get("duration") and not args.natural_duration:
-            print("Engine has no duration control: phrases are generated naturally and fitted to their slots.", flush=True)
+    report_path = out_path.with_name(out_path.stem + ".report.json")
+    only = {value.strip() for value in args.only.split(",") if value.strip()} if args.only else None
+    reuse = {}
+    previous_report = {}
+    if only is not None:
+        # Partial re-voice: phrases outside --only keep their saved WAV.
+        for index, item in enumerate(items, start=1):
+            seg_id = str(item.get("id") or f"seg_{index:04d}")
+            saved = segments_dir / f"{seg_id}.wav"
+            if seg_id not in only and saved.is_file():
+                reuse[seg_id] = saved
+        if report_path.is_file():
+            try:
+                previous_report = {
+                    entry["id"]: entry
+                    for entry in json.loads(report_path.read_text(encoding="utf-8")).get("segments") or []
+                }
+            except (OSError, ValueError, KeyError):
+                previous_report = {}
+    to_voice = len(items) - len(reuse)
+    print(f"Engine: {manifest['name']} | device: {device} | phrases to voice: {to_voice} of {len(items)}", flush=True)
+
+    with contextlib.ExitStack() as stack:
+        tmp = stack.enter_context(tempfile.TemporaryDirectory(prefix="dub_"))
+        synth = None
+        if to_voice:
+            print(f"Engine settings: {json.dumps(settings, ensure_ascii=False)}", flush=True)
+            session = stack.enter_context(EngineSession(engine_id))
+            session.load(settings, device)
+            synth = Synthesizer(session, manifest, args, Path(tmp))
+            sample_rate = synth.sample_rate
+            if not manifest.get("supports", {}).get("duration") and not args.natural_duration:
+                print("Engine has no duration control: phrases are generated naturally and fitted to their slots.", flush=True)
+        else:
+            print("Nothing to re-voice: remixing saved phrases.", flush=True)
+            sample_rate = sf.info(str(next(iter(reuse.values())))).samplerate
 
         total_seconds = max(float(item.get("source_end") or 0) for item in items)
         if total_seconds <= 0:
@@ -406,24 +437,34 @@ def main():
                 duration = max(0.25, float(item.get("source_end") or start) - start)
             if not item.get("source_start") and not item.get("source_end"):
                 start = cursor / sample_rate
-
+            gap = 0.0
             if args.natural_duration:
                 # Keep the intended pause between segments, but let the engine
                 # choose its own speech length instead of filling a forced slot.
                 gap = max(0.0, start if prev_source_end is None else start - prev_source_end)
                 prev_source_end = float(item.get("source_end") or (start + duration))
+
+            if seg_id in reuse:
+                audio, rate = read_audio(reuse[seg_id])
+                audio = resample(audio, rate, sample_rate)
+                fit = {key: value for key, value in (previous_report.get(seg_id) or {}).items()
+                       if key in ("natural_seconds", "speedup", "clipped_seconds")}
+                print(f"[{index}/{len(items)}] {seg_id}: unchanged", flush=True)
+            elif args.natural_duration:
                 print(f"[{index}/{len(items)}] {seg_id}: natural (pause {gap:.2f}s) {text[:80]}", flush=True)
-                audio = synth.synthesize(item, text, None, args.speed)
-                start = cursor / sample_rate + gap
-                synth.last_fit = {"natural_seconds": round(len(audio) / sample_rate, 3), "speedup": 1.0, "clipped_seconds": 0.0}
+                audio = clean_segment_audio(synth.synthesize(item, text, None, args.speed), sample_rate, args)
+                fit = {"natural_seconds": round(len(audio) / sample_rate, 3), "speedup": 1.0, "clipped_seconds": 0.0}
             else:
                 print(f"[{index}/{len(items)}] {seg_id}: {duration:.2f}s {text[:80]}", flush=True)
                 target_samples = int(round(duration * sample_rate))
                 max_samples = int(round((duration + max(0.0, args.tail_room)) * sample_rate))
-                audio = synth.fit(item, text, duration, target_samples, max_samples)
-            audio = clean_segment_audio(audio, sample_rate, args)
+                audio = clean_segment_audio(synth.fit(item, text, duration, target_samples, max_samples), sample_rate, args)
+                fit = dict(synth.last_fit)
+            if seg_id not in reuse:
+                sf.write(str(segments_dir / f"{seg_id}.wav"), audio, sample_rate)
+            if args.natural_duration:
+                start = cursor / sample_rate + gap
 
-            sf.write(str(segments_dir / f"{seg_id}.wav"), audio, sample_rate)
             start_sample = int(round(start * sample_rate))
             if start_sample + len(audio) > len(track):
                 track = np.pad(track, (0, start_sample + len(audio) - len(track)))
@@ -435,7 +476,7 @@ def main():
                 "start": round(start, 3),
                 "slot_seconds": round(duration, 3),
                 "seconds": round(len(audio) / sample_rate, 3),
-                **synth.last_fit,
+                **fit,
             })
             print(f"PROGRESS {index}/{len(items)} Озвучка фраз", flush=True)
 
@@ -446,7 +487,6 @@ def main():
         track = track / peak * 0.98
     sf.write(str(out_path), track, sample_rate)
     # Per-phrase fit report: the UI uses it to mark phrases that were sped up or cut.
-    report_path = out_path.with_name(out_path.stem + ".report.json")
     report_path.write_text(json.dumps({"engine": engine_id, "segments": report}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wav={out_path.resolve()}", flush=True)
     print(f"report={report_path.resolve()}", flush=True)

@@ -264,6 +264,8 @@ def serve_output_file(handler, file_path):
     handler.send_response(status)
     handler.send_header("Content-Type", content_type)
     handler.send_header("Accept-Ranges", "bytes")
+    # Re-voiced phrases and re-exported videos keep their file names.
+    handler.send_header("Cache-Control", "no-cache")
     handler.send_header("Content-Length", str(length))
     if status == 206:
         handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
@@ -1120,27 +1122,28 @@ def project_detail(directory):
             files[key] = {"path": relative, "url": project_file_url(project_id, relative), "name": Path(relative).name}
 
     segments = []
-    plan = projects.plan_path(directory, data)
-    units_file = plan.with_name(plan.name.replace(".dub.jsonl", ".segments.json"))
-    if units_file.is_file():
-        units = json.loads(units_file.read_text(encoding="utf-8")).get("translation_units") or []
-        report = {}
-        if data.get("voice_track"):
-            report_file = directory / data["voice_track"]
-            report_file = report_file.with_name(report_file.stem + ".report.json")
-            if report_file.is_file():
-                report = {item["id"]: item for item in json.loads(report_file.read_text(encoding="utf-8")).get("segments") or []}
-        for unit in units:
-            item_report = report.get(f"unit_{int(unit['id']):04d}") or {}
-            segments.append({
-                "id": unit["id"],
-                "start": unit.get("start"),
-                "duration": unit.get("duration"),
-                "source": unit.get("source"),
-                "translation": unit.get("translation"),
-                "speedup": item_report.get("speedup"),
-                "clipped": item_report.get("clipped_seconds"),
-            })
+    report = projects.phrase_report(directory, data)
+    phrase_dir = projects.segments_dir(directory, data)
+    edited = set(data.get("edited") or [])
+    dirty = set(data.get("dirty") or [])
+    for unit in projects.load_units(directory, data):
+        key = projects.unit_key(unit["id"])
+        item_report = report.get(key) or {}
+        phrase_wav = phrase_dir / f"{key}.wav"
+        segments.append({
+            "id": unit["id"],
+            "start": unit.get("start"),
+            "end": unit.get("end"),
+            "duration": unit.get("duration"),
+            "source": unit.get("source"),
+            "translation": unit.get("translation"),
+            "speedup": item_report.get("speedup"),
+            "clipped": item_report.get("clipped_seconds"),
+            "spoken": item_report.get("natural_seconds"),
+            "edited": int(unit["id"]) in edited,
+            "dirty": int(unit["id"]) in dirty,
+            "voice_url": project_file_url(project_id, phrase_wav.relative_to(directory).as_posix()) if phrase_wav.is_file() else "",
+        })
 
     settings = load_settings()
     separator = next((item for item in tts_engines.list_engines(kind="separator")
@@ -1198,20 +1201,19 @@ def project_upload(handler, directory, kind):
     return projects.update_project(directory, {"mix": {"music_file": relative}})
 
 
-def start_project_job(directory, stage_name):
+def start_project_job(directory, stage_name, ids=None):
     if stage_name not in projects.PLAN:
         raise ValueError(f"Unknown stage: {stage_name}")
     project_id = directory.name
+    ids = [int(value) for value in ids or []]
+    command = [sys.executable or "python", str(ROOT / "project.py"), "run", str(directory), stage_name]
+    if ids:
+        command += ["--ids", ",".join(str(value) for value in ids)]
 
     def on_complete():
         return {"project": project_id, "stage": stage_name}
 
-    start_job(
-        [sys.executable or "python", str(ROOT / "project.py"), "run", str(directory), stage_name],
-        "project",
-        on_complete=on_complete,
-        meta={"project": project_id, "stage": stage_name},
-    )
+    start_job(command, "project", on_complete=on_complete, meta={"project": project_id, "stage": stage_name, "ids": ids})
 
 
 def open_folder(path):
@@ -1258,7 +1260,12 @@ def handle_project_post(handler, parsed):
     elif action == "upload":
         project_upload(handler, directory, parse_qs(parsed.query).get("kind", [""])[0])
     elif action == "run":
-        start_project_job(directory, str(read_json(handler).get("stage") or "all"))
+        payload = read_json(handler)
+        start_project_job(directory, str(payload.get("stage") or "all"), payload.get("ids"))
+    elif action == "phrases":
+        payload = read_json(handler)
+        data = projects.load_project(directory)
+        projects.set_translations(directory, data, {int(key): value for key, value in (payload.get("translations") or {}).items()})
     elif action == "delete":
         projects.delete_project(directory)
         json_response(handler, {"ok": True, "projects": projects.list_projects()})

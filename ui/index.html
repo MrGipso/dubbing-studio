@@ -259,8 +259,16 @@
           </section>
 
           <section class="panel step-pane" data-pane="review">
-            <p class="hint">Перевод по фразам и как каждая легла в тайминг. Правка фраз и переозвучка по одной появятся в следующей версии.</p>
+            <div class="review-toolbar">
+              <p id="reviewSummary" class="hint"></p>
+              <div class="actions">
+                <button type="button" class="secondary" id="shortenLongBtn" data-job-button>✂ Сократить длинные</button>
+                <button type="button" class="primary" id="revoiceDirtyBtn" data-job-button>▶ Переозвучить изменённые</button>
+              </div>
+            </div>
+            <p class="hint">Правьте перевод прямо в таблице, изменения сохраняются сами. «▶ оригинал» проигрывает фразу из ролика, «▶ озвучка» — как она звучит сейчас. После правок нажмите «Переозвучить изменённые»: заново озвучатся только они, и ролик пересоберётся.</p>
             <div id="segmentsTable" class="segments"></div>
+            <audio id="phrasePlayer" preload="none" hidden></audio>
           </section>
 
           <section class="panel step-pane" data-pane="result">

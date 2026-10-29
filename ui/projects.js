@@ -278,30 +278,166 @@ function renderProject(firstOpen = false) {
   renderDownloads(files, state);
 }
 
+let segmentsSignature = "";
+let segmentsPendingRender = false;
+
+function isLongPhrase(segment) {
+  return (segment.clipped || 0) > 0.05 || (segment.speedup || 1) >= 1.1;
+}
+
+function phraseStatus(segment, voiced) {
+  if (segment.dirty) return '<span class="fit fit-warn">изменено — переозвучьте</span>';
+  if (!voiced) return '<span class="fit">не озвучено</span>';
+  if ((segment.clipped || 0) > 0.05) return `<span class="fit fit-bad">обрезано ${segment.clipped.toFixed(1)} с</span>`;
+  if ((segment.speedup || 1) > 1.02) return `<span class="fit fit-warn">ускорено ×${segment.speedup.toFixed(2)}</span>`;
+  return '<span class="fit fit-ok">влезает</span>';
+}
+
 function renderSegments(segments, voiced) {
+  const summary = document.getElementById("reviewSummary");
+  const longCount = voiced ? segments.filter((segment) => !segment.dirty && isLongPhrase(segment)).length : 0;
+  const dirtyCount = segments.filter((segment) => segment.dirty).length;
+  const okCount = voiced ? segments.filter((segment) => !segment.dirty && !isLongPhrase(segment)).length : 0;
+  summary.textContent = !segments.length ? "" : voiced
+    ? `Фраз: ${segments.length} · влезают: ${okCount} · длинных: ${longCount} · изменено: ${dirtyCount}`
+    : `Фраз: ${segments.length}. Озвучьте перевод на шаге «Голос», чтобы увидеть, как фразы легли в тайминг.`;
+  const shortenBtn = document.getElementById("shortenLongBtn");
+  const revoiceBtn = document.getElementById("revoiceDirtyBtn");
+  shortenBtn.textContent = `✂ Сократить длинные (${longCount})`;
+  shortenBtn.dataset.count = String(longCount);
+  revoiceBtn.textContent = `▶ Переозвучить изменённые (${dirtyCount})`;
+  revoiceBtn.dataset.count = String(dirtyCount);
+
+  // Never rebuild the table under the user's cursor.
+  const signature = JSON.stringify([voiced, segments.map((s) => [s.id, s.translation, s.dirty, s.speedup, s.clipped, s.voice_url])]);
+  if (signature === segmentsSignature) return;
+  if (pv.segments.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") {
+    segmentsPendingRender = true;
+    return;
+  }
+  segmentsSignature = signature;
+  segmentsPendingRender = false;
+
   if (!segments.length) {
     pv.segments.innerHTML = '<p class="meta">Перевод появится после шага 1.</p>';
     return;
   }
-  const rows = segments.map((segment) => {
-    let status = '<span class="fit">не озвучено</span>';
-    if (voiced) {
-      if (segment.clipped > 0.05) status = `<span class="fit fit-bad">обрезано ${segment.clipped.toFixed(1)} с</span>`;
-      else if (segment.speedup > 1.02) status = `<span class="fit fit-warn">ускорено ×${segment.speedup.toFixed(2)}</span>`;
-      else status = '<span class="fit fit-ok">влезает</span>';
-    }
-    return `
-      <div class="segment-row">
-        <span class="meta">${formatClock(segment.start)} · ${Number(segment.duration || 0).toFixed(1)} с</span>
-        <span>${escapeHtml(segment.source)}</span>
-        <span>${escapeHtml(segment.translation)}</span>
-        ${status}
-      </div>`;
-  }).join("");
-  pv.segments.innerHTML = `
-    <div class="segment-row segment-head"><span>Время</span><span>Оригинал</span><span>Перевод</span><span>Тайминг</span></div>
-    ${rows}`;
+  pv.segments.innerHTML = '<div class="segment-row segment-head"><span>Время</span><span>Оригинал</span><span>Перевод</span><span>Тайминг</span></div>';
+  for (const segment of segments) {
+    const row = document.createElement("div");
+    row.className = `segment-row${segment.dirty ? " segment-dirty" : ""}`;
+    row.dataset.id = segment.id;
+    row.innerHTML = `
+      <span class="meta">${formatClock(segment.start)} · ${Number(segment.duration || 0).toFixed(1)} с</span>
+      <span class="segment-source">${escapeHtml(segment.source)}
+        <button type="button" class="text-btn" data-play="source">▶ оригинал</button></span>
+      <textarea class="segment-text" rows="2" spellcheck="true">${escapeHtml(segment.translation)}</textarea>
+      <span class="segment-actions">
+        ${phraseStatus(segment, voiced)}
+        <span class="segment-buttons">
+          <button type="button" class="text-btn" data-play="voice" ${segment.voice_url ? "" : "hidden"}>▶ озвучка</button>
+          <button type="button" class="text-btn" data-phrase-stage="shorten" data-job-button title="Попросить модель сократить фразу под тайминг">✂ сократить</button>
+          <button type="button" class="text-btn" data-phrase-stage="revoice" data-job-button title="Переозвучить только эту фразу" ${voiced ? "" : "hidden"}>↻ переозвучить</button>
+        </span>
+      </span>
+    `;
+    pv.segments.appendChild(row);
+  }
+  if (lastState?.job) renderJob(lastState.job);  // apply disabled state to the new buttons
 }
+
+let phraseSaveTimer = null;
+const pendingPhrases = {};
+
+async function flushPhraseEdits() {
+  clearTimeout(phraseSaveTimer);
+  if (!currentProject || !Object.keys(pendingPhrases).length) return;
+  const translations = { ...pendingPhrases };
+  for (const key of Object.keys(pendingPhrases)) delete pendingPhrases[key];
+  const data = await postJson(projectUrl(currentProject.id, "phrases"), { translations });
+  currentProject = data.project;
+  renderProject();
+}
+
+pv.segments.addEventListener("input", (event) => {
+  const textarea = event.target.closest(".segment-text");
+  if (!textarea) return;
+  const id = textarea.closest(".segment-row").dataset.id;
+  const value = textarea.value.trim();
+  if (!value) return;
+  pendingPhrases[id] = value;
+  clearTimeout(phraseSaveTimer);
+  phraseSaveTimer = setTimeout(() => flushPhraseEdits().catch((error) => alert(error.message)), 900);
+});
+pv.segments.addEventListener("focusout", (event) => {
+  if (!event.target.closest(".segment-text")) return;
+  flushPhraseEdits()
+    .catch((error) => alert(error.message))
+    .finally(() => {
+      if (segmentsPendingRender) renderSegments(currentProject.segments || [], currentProject.state?.voiced);
+    });
+});
+
+// One shared player for phrase previews: original fragment or the phrase voice.
+const phrasePlayer = document.getElementById("phrasePlayer");
+let phraseStopAt = null;
+phrasePlayer.addEventListener("timeupdate", () => {
+  if (phraseStopAt !== null && phrasePlayer.currentTime >= phraseStopAt) {
+    phrasePlayer.pause();
+    phraseStopAt = null;
+  }
+});
+
+function playPhrase(url, start = null, end = null) {
+  phrasePlayer.pause();
+  phraseStopAt = end;
+  const begin = () => {
+    if (start !== null) phrasePlayer.currentTime = start;
+    phrasePlayer.play().catch(() => {});
+  };
+  if (phrasePlayer.dataset.src === url && phrasePlayer.readyState >= 1) {
+    begin();
+    return;
+  }
+  phrasePlayer.dataset.src = url;
+  phrasePlayer.src = url;
+  phrasePlayer.addEventListener("loadedmetadata", begin, { once: true });
+  phrasePlayer.load();
+}
+
+pv.segments.addEventListener("click", async (event) => {
+  const row = event.target.closest(".segment-row[data-id]");
+  if (!row || !currentProject) return;
+  const segment = (currentProject.segments || []).find((item) => String(item.id) === row.dataset.id);
+  if (!segment) return;
+  const play = event.target.closest("[data-play]");
+  if (play) {
+    const files = currentProject.files || {};
+    if (play.dataset.play === "voice" && segment.voice_url) playPhrase(segment.voice_url);
+    if (play.dataset.play === "source") {
+      const audio = files.vocals || files.source;
+      if (audio) playPhrase(audio.url, Number(segment.start), Number(segment.end ?? segment.start + segment.duration));
+    }
+    return;
+  }
+  const stageButton = event.target.closest("[data-phrase-stage]");
+  if (stageButton) await runProjectStage(stageButton.dataset.phraseStage, [Number(segment.id)]);
+});
+
+document.getElementById("shortenLongBtn").addEventListener("click", async (event) => {
+  if (event.currentTarget.dataset.count === "0") {
+    alert("Длинных фраз нет: все укладываются в тайминг.");
+    return;
+  }
+  await runProjectStage("shorten");
+});
+document.getElementById("revoiceDirtyBtn").addEventListener("click", async (event) => {
+  if (event.currentTarget.dataset.count === "0") {
+    alert("Изменённых фраз нет. Поправьте перевод в таблице или нажмите «✂ сократить» у длинной фразы.");
+    return;
+  }
+  await runProjectStage("revoice");
+});
 
 function renderDownloads(files, state) {
   const items = [
@@ -396,19 +532,25 @@ pv.musicFileInput.addEventListener("change", () => {
 
 // ---------------------------------------------------------------- running stages
 
-for (const button of document.querySelectorAll("[data-run-stage]")) {
-  button.addEventListener("click", async () => {
-    if (!currentProject) return;
-    try {
-      await flushProjectSave();
-      const data = await postJson(projectUrl(currentProject.id, "run"), { stage: button.dataset.runStage });
-      currentProject = data.project;
-      renderProject();
-      await refreshState();
-    } catch (error) {
-      alert(error.message);
+async function runProjectStage(stage, ids = null) {
+  if (!currentProject) return;
+  try {
+    await flushProjectSave();
+    await flushPhraseEdits();
+    if ((stage === "prepare" || stage === "all") && (currentProject.edited || []).length) {
+      if (!confirm("Перевод будет сделан заново, и ваши правки фраз пропадут. Продолжить?")) return;
     }
-  });
+    const data = await postJson(projectUrl(currentProject.id, "run"), ids ? { stage, ids } : { stage });
+    currentProject = data.project;
+    renderProject();
+    await refreshState();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+for (const button of document.querySelectorAll("[data-run-stage]")) {
+  button.addEventListener("click", () => runProjectStage(button.dataset.runStage));
 }
 
 // Reload the project when its job finishes, then move the user to the next step.
@@ -425,6 +567,11 @@ onState(async (state) => {
     await openProject(currentProject.id);
     if (job.exit_code === 0) {
       showStep({ prepare: "voice", voice: "result", export: "result", all: "result" }[stage] || currentStep);
+    }
+    if (stage === "revoice" && job.exit_code === 0) {
+      const ids = job.meta?.ids || [];
+      const segment = ids.length === 1 && (currentProject.segments || []).find((item) => item.id === ids[0]);
+      if (segment?.voice_url) playPhrase(`${segment.voice_url}&v=${Date.now()}`);  // let the user hear the new take
     }
   }
 });

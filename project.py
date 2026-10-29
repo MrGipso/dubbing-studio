@@ -50,6 +50,8 @@ DEFAULT_PROJECT = {
     "timing": {"speed": 1.0, "tail_room": 0.6, "max_auto_speed": 1.18, "post_clean": "soft"},
     "mix": {"voice": 1.0, "background": 0.8, "music": 0.25, "music_file": "", "loudnorm": True},
     "state": {"prepared": False, "voiced": False, "exported": False},
+    "edited": [],
+    "dirty": [],
 }
 
 
@@ -434,7 +436,7 @@ def transcribe_sample(directory, path, settings):
     return (directory / "voice" / "sample_transcript.txt").read_text(encoding="utf-8").strip()
 
 
-def stage_voice(directory, data, settings):
+def stage_voice(directory, data, settings, only=None):
     plan = plan_path(directory, data)
     if not plan.is_file():
         raise ProjectError("Сначала выполните шаг «Исходник»: распознать и перевести.")
@@ -479,6 +481,8 @@ def stage_voice(directory, data, settings):
         "--segments-dir", str(directory / "work" / f"segments_{code}"),
         "--output", str(output),
     ]
+    if only is not None:
+        command += ["--only", ",".join(unit_key(unit_id) for unit_id in only)]
     run(command, f"Озвучиваю: {manifest['name']}")
     data["voice_track"] = output.relative_to(directory).as_posix()
 
@@ -550,6 +554,186 @@ def stage_mux(directory, data):
     data["video"] = output.relative_to(directory).as_posix()
 
 
+# --------------------------------------------------------------------------
+# Phrases: edit, shorten, re-voice
+
+
+def units_path(directory, data):
+    plan = plan_path(directory, data)
+    return plan.with_name(plan.name.replace(".dub.jsonl", ".segments.json"))
+
+
+def translated_srt_path(directory, data):
+    plan = plan_path(directory, data)
+    return plan.with_name(plan.name.replace(".dub.jsonl", ".srt"))
+
+
+def segments_dir(directory, data):
+    return Path(directory) / "work" / f"segments_{target_code(data)}"
+
+
+def unit_key(unit_id):
+    return f"unit_{int(unit_id):04d}"
+
+
+def load_units(directory, data):
+    path = units_path(directory, data)
+    if not path.is_file():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("translation_units") or []
+
+
+def phrase_report(directory, data):
+    """Fit report of the last voicing: {"unit_0003": {...}}."""
+    if not data.get("voice_track"):
+        return {}
+    track = Path(directory) / data["voice_track"]
+    report = track.with_name(track.stem + ".report.json")
+    if not report.is_file():
+        return {}
+    return {item["id"]: item for item in json.loads(report.read_text(encoding="utf-8")).get("segments") or []}
+
+
+def set_translations(directory, data, changes, edited=True):
+    """Write new translations into the units file, the voice plan and the subtitles."""
+    import translate_srt
+
+    changes = {int(key): str(value).strip() for key, value in (changes or {}).items()}
+    if any(not value for value in changes.values()):
+        raise ProjectError("Перевод фразы не может быть пустым.")
+    units_file = units_path(directory, data)
+    plan = plan_path(directory, data)
+    if not units_file.is_file() or not plan.is_file():
+        raise ProjectError("Сначала распознайте и переведите исходник.")
+
+    payload = json.loads(units_file.read_text(encoding="utf-8"))
+    units = payload.get("translation_units") or []
+    known = {int(unit["id"]) for unit in units}
+    missing = sorted(set(changes) - known)
+    if missing:
+        raise ProjectError(f"Нет фраз с номерами: {missing}")
+    changed = set()
+    for unit in units:
+        new_text = changes.get(int(unit["id"]))
+        if new_text is not None and new_text != (unit.get("translation") or "").strip():
+            unit["translation"] = new_text
+            changed.add(int(unit["id"]))
+    if not changed:
+        return data
+    units_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    lines = []
+    for line in plan.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        for unit_id in changed:
+            if item.get("id") == unit_key(unit_id):
+                item["text"] = changes[unit_id]
+        lines.append(json.dumps(item, ensure_ascii=False))
+    plan.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    translate_srt.write_srt(translated_srt_path(directory, data), units)
+
+    if edited:
+        data["edited"] = sorted(set(data.get("edited") or []) | changed)
+    if data["state"].get("voiced"):
+        data["dirty"] = sorted(set(data.get("dirty") or []) | changed)
+        data["state"]["exported"] = False
+    save_project(directory, data)
+    return data
+
+
+def long_phrase_ids(directory, data, max_speedup=1.1):
+    """Phrases that had to be sped up noticeably or were cut during the last voicing."""
+    report = phrase_report(directory, data)
+    result = []
+    for unit in load_units(directory, data):
+        entry = report.get(unit_key(unit["id"])) or {}
+        if (entry.get("clipped_seconds") or 0) > 0.05 or (entry.get("speedup") or 1.0) >= max_speedup:
+            result.append(int(unit["id"]))
+    return result
+
+
+def llm_for(settings):
+    import llm_client
+
+    llm = settings["llm"]
+    return llm_client.LLMClient(
+        provider=llm.get("provider"),
+        base_url=llm.get("url") or "",
+        model=llm.get("model") or "",
+        context_length=int(llm.get("contextLength") or 8192),
+        auto_load=bool(llm.get("autoLoad", True)),
+        unload_others=bool(llm.get("unloadOthers", True)),
+        unload_when_done=bool(llm.get("unloadWhenDone", True)),
+        timeout=180,
+    )
+
+
+def shorten_phrases(directory, data, ids, settings, batch_size=8):
+    """Ask the translation model for shorter variants that fit the phrase slots."""
+    import translate_srt
+
+    ids = [int(value) for value in ids]
+    units = {int(unit["id"]): unit for unit in load_units(directory, data)}
+    report = phrase_report(directory, data)
+    wanted = [units[unit_id] for unit_id in ids if unit_id in units]
+    if not wanted:
+        print("Нет фраз для сокращения.", flush=True)
+        return {}
+
+    llm = llm_for(settings)
+    results = {}
+    try:
+        llm.prepare()
+        for offset in range(0, len(wanted), batch_size):
+            batch = wanted[offset:offset + batch_size]
+            items = []
+            for unit in batch:
+                entry = report.get(unit_key(unit["id"])) or {}
+                slot = float(unit.get("duration") or 0) or 1.0
+                spoken = float(entry.get("natural_seconds") or 0)
+                words = len(str(unit.get("translation") or "").split())
+                ratio = min(0.95, slot / spoken) if spoken > slot else 0.8
+                items.append({
+                    "id": int(unit["id"]),
+                    "source": unit.get("source"),
+                    "translation": unit.get("translation"),
+                    "slot_seconds": round(slot, 2),
+                    "spoken_seconds": round(spoken, 2) if spoken else None,
+                    "max_words": max(2, int(words * ratio)),
+                })
+            messages = [
+                {"role": "system", "content": (
+                    "You are a dubbing editor. Shorten each translation so it can be spoken within slot_seconds. "
+                    "Keep the meaning, names and numbers, keep the same language and a natural spoken style. "
+                    "Return only valid JSON."
+                )},
+                {"role": "user", "content": json.dumps({
+                    "task": "shorten_dubbing_lines",
+                    "language": data.get("target"),
+                    "rules": [
+                        "Return a JSON object only: {\"items\": [{\"id\": number, \"translation\": string}]}.",
+                        "Use at most max_words words per item.",
+                        "Drop filler words first, then rephrase more compactly.",
+                    ],
+                    "dubbing_units": items,
+                }, ensure_ascii=False)},
+            ]
+            content = llm.complete(messages, temperature=0.3, schema=translate_srt.TRANSLATION_SCHEMA)
+            for item in translate_srt.extract_json_array(content):
+                if isinstance(item, dict) and int(item.get("id", -1)) in units and str(item.get("translation") or "").strip():
+                    results[int(item["id"])] = str(item["translation"]).strip()
+            progress(min(len(wanted), offset + len(batch)), len(wanted), "Сокращение фраз")
+    finally:
+        llm.finish()
+
+    for unit_id, new_text in results.items():
+        print(f"  {unit_id}: {units[unit_id].get('translation')} -> {new_text}", flush=True)
+    set_translations(directory, data, results)
+    return results
+
+
 PLAN = {
     "prepare": [
         ("extract", "Извлечение звука"),
@@ -560,11 +744,13 @@ PLAN = {
     ],
     "voice": [("voice", "Озвучка")],
     "export": [("mix", "Сведение"), ("mux", "Сборка видео")],
+    "shorten": [("shorten", "Сокращение длинных фраз")],
+    "revoice": [("revoice", "Переозвучка изменённых фраз"), ("mix", "Сведение"), ("mux", "Сборка видео")],
 }
 PLAN["all"] = PLAN["prepare"] + PLAN["voice"] + PLAN["export"]
 
 
-def run_stages(directory, which):
+def run_stages(directory, which, ids=None):
     directory = Path(directory).resolve()
     data = load_project(directory)
     if not data.get("source"):
@@ -586,6 +772,8 @@ def run_stages(directory, which):
                 stage_transcribe(directory, data, settings)
             elif key == "translate":
                 stage_translate(directory, data, settings)
+                data["edited"] = []
+                data["dirty"] = []
             elif key == "sample":
                 stage_voice_sample(directory, data)
                 data["state"]["prepared"] = True
@@ -593,6 +781,22 @@ def run_stages(directory, which):
                 data["state"]["voiced"] = data["state"]["exported"] = False
                 stage_voice(directory, data, settings)
                 data["state"]["voiced"] = True
+                data["dirty"] = []
+            elif key == "shorten":
+                targets = ids or long_phrase_ids(directory, data)
+                if not targets:
+                    print("Все фразы укладываются в тайминг, сокращать нечего.", flush=True)
+                shorten_phrases(directory, data, targets, settings)
+                data = load_project(directory)
+            elif key == "revoice":
+                if not data["state"].get("voiced"):
+                    raise ProjectError("Сначала озвучьте перевод целиком (шаг «Голос»).")
+                targets = sorted(set(ids or data.get("dirty") or []))
+                if targets:
+                    stage_voice(directory, data, settings, only=targets)
+                else:
+                    print("Изменённых фраз нет: пересобираю ролик из готовой озвучки.", flush=True)
+                data["dirty"] = [unit_id for unit_id in data.get("dirty") or [] if unit_id not in targets]
             elif key == "mix":
                 data["state"]["exported"] = False
                 stage_mix(directory, data)
@@ -623,6 +827,7 @@ def main():
     runner = sub.add_parser("run", help="Run stages of a project.")
     runner.add_argument("project", help="Project folder or id")
     runner.add_argument("stage", choices=sorted(PLAN))
+    runner.add_argument("--ids", default="", help="Phrase numbers for shorten / revoice, e.g. 3,5,8.")
     sub.add_parser("list", help="List projects.")
     args = parser.parse_args()
 
@@ -634,7 +839,8 @@ def main():
             directory = Path(args.project)
             if not (directory / "project.json").is_file():
                 directory = project_dir(args.project)
-            run_stages(directory, args.stage)
+            ids = [int(value) for value in args.ids.split(",") if value.strip()] if args.ids else None
+            run_stages(directory, args.stage, ids)
         else:
             for item in list_projects():
                 print(f"{item['id']}  {item['name']}  -> {item['target']}  {item['state']}")
