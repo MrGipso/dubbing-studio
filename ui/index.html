@@ -18,490 +18,301 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
-      <div>
-        <h1>Dubbing Studio</h1>
-        <p id="subtitle">Дубляж видео: распознавание → перевод любой моделью → озвучка любым движком</p>
-      </div>
-      <div class="status-strip">
+  <div class="app">
+    <aside class="rail">
+      <div class="brand">Dubbing Studio</div>
+      <nav class="rail-nav" aria-label="Разделы">
+        <button type="button" class="rail-item active" data-view="projects">Проекты</button>
+        <button type="button" class="rail-item" data-view="tools">Инструменты</button>
+        <button type="button" class="rail-item" data-view="settings">Настройки</button>
+      </nav>
+      <div class="rail-foot">
+        <button type="button" id="llmBadge" class="badge neutral badge-btn" data-open-engines title="Модель перевода">Перевод</button>
+        <button type="button" id="ttsBadge" class="badge neutral badge-btn" data-open-engines title="Движок озвучки">Озвучка</button>
         <button type="button" id="themeToggle" class="theme-toggle" aria-label="Переключить тему" aria-pressed="false">
           <span class="theme-toggle-track" aria-hidden="true"><span></span></span>
           <span id="themeLabel">Тема</span>
         </button>
-        <span id="jobBadge" class="badge neutral">Idle</span>
-        <button type="button" id="llmBadge" class="badge neutral badge-btn" data-open-engines title="Модель перевода">Перевод</button>
-        <button type="button" id="ttsBadge" class="badge neutral badge-btn" data-open-engines title="Движок озвучки">Озвучка</button>
       </div>
-    </header>
+    </aside>
 
-    <nav class="section-tabs" aria-label="Разделы">
-      <button type="button" class="active" data-section-tab="dubbing">Дубляж</button>
-      <button type="button" data-section-tab="music">Музыка</button>
-      <button type="button" data-section-tab="transcription">Транскрибация</button>
-      <button type="button" data-section-tab="translation">Перевод</button>
-      <button type="button" data-section-tab="script">Сценарий</button>
-      <button type="button" data-section-tab="youtube">YouTube</button>
-      <button type="button" data-section-tab="content">Контент</button>
-      <button type="button" data-section-tab="clean">Обработка WAV</button>
-      <button type="button" data-section-tab="engines" class="engines-tab">⚙ Движки</button>
-    </nav>
-
-    <section class="workspace-section active" data-section="dubbing">
-    <section class="grid">
-      <form id="runForm" class="panel controls">
-        <div class="panel-head">
-          <h2>Запуск</h2>
-          <button type="button" id="refreshBtn" class="icon-btn" title="Обновить">↻</button>
-        </div>
-
-        <label class="field wide">
-          <span>Аудио</span>
-          <div class="input-action drop-zone" data-drop-kind="audio" data-target="audio">
-            <input name="audio" placeholder="Выбери или перетащи аудиофайл" autocomplete="off">
-            <button type="button" class="secondary" data-pick-file="audio">Выбрать</button>
-            <input type="file" class="file-input" data-file-input="audio" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
-          </div>
-        </label>
-
-        <div class="row">
-          <label class="field">
-            <span>Язык оригинала</span>
-            <select name="sourceLanguage">
-              <option value="auto" selected>Определить автоматически</option>
-              <option value="English">Английский</option>
-              <option value="Russian">Русский</option>
-              <option value="Ukrainian">Украинский</option>
-              <option value="Spanish">Испанский</option>
-              <option value="Portuguese">Португальский</option>
-              <option value="German">Немецкий</option>
-              <option value="French">Французский</option>
-              <option value="Italian">Итальянский</option>
-              <option value="Polish">Польский</option>
-              <option value="Bulgarian">Болгарский</option>
-              <option value="Turkish">Турецкий</option>
-              <option value="Dutch">Нидерландский</option>
-              <option value="Swedish">Шведский</option>
-              <option value="Danish">Датский</option>
-              <option value="Norwegian">Норвежский</option>
-              <option value="Finnish">Финский</option>
-              <option value="Greek">Греческий</option>
-              <option value="Hebrew">Иврит</option>
-              <option value="Arabic">Арабский</option>
-              <option value="Hindi">Хинди</option>
-              <option value="Japanese">Японский</option>
-              <option value="Korean">Корейский</option>
-              <option value="Chinese">Китайский</option>
-              <option value="Malay">Малайский</option>
-              <option value="Swahili">Суахили</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Перевести на</span>
-            <select name="targetLanguage">
-              <option value="English" selected>Английский</option>
-              <option value="Russian">Русский</option>
-              <option value="Ukrainian">Украинский</option>
-              <option value="Spanish">Испанский</option>
-              <option value="Portuguese">Португальский</option>
-              <option value="German">Немецкий</option>
-              <option value="French">Французский</option>
-              <option value="Italian">Итальянский</option>
-              <option value="Polish">Польский</option>
-              <option value="Bulgarian">Болгарский</option>
-              <option value="Turkish">Турецкий</option>
-              <option value="Dutch">Нидерландский</option>
-              <option value="Swedish">Шведский</option>
-              <option value="Danish">Датский</option>
-              <option value="Norwegian">Норвежский</option>
-              <option value="Finnish">Финский</option>
-              <option value="Greek">Греческий</option>
-              <option value="Hebrew">Иврит</option>
-              <option value="Arabic">Арабский</option>
-              <option value="Hindi">Хинди</option>
-              <option value="Japanese">Японский</option>
-              <option value="Korean">Корейский</option>
-              <option value="Chinese">Китайский</option>
-              <option value="Malay">Малайский</option>
-              <option value="Swahili">Суахили</option>
-            </select>
-          </label>
-        </div>
-        <input type="hidden" name="whisperLanguage" value="auto">
-        <input type="hidden" name="targetLanguageId" value="en">
-
-        <div class="engine-summary">
-          <div><span class="engine-kind">Перевод</span><strong data-llm-summary>—</strong></div>
-          <div><span class="engine-kind">Озвучка</span><strong data-tts-summary>—</strong></div>
-          <button type="button" class="text-btn" data-open-engines>Изменить</button>
-        </div>
-
-        <div class="form-section">
-          <div class="section-title">Голос</div>
-
-          <label class="field wide">
-            <span>Образец голоса (10–30 с чистой речи, необязательно)</span>
-            <div class="input-action drop-zone" data-drop-kind="reference" data-target="refAudio">
-              <input name="refAudio" placeholder="Перетащите WAV/MP3: этим голосом будет озвучен перевод" autocomplete="off">
-              <button type="button" class="secondary" data-pick-file="reference">Выбрать</button>
-              <input type="file" class="file-input" data-file-input="reference" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+    <main class="main">
+      <!-- ============================== Projects -->
+      <section class="view active" data-view="projects">
+        <div id="projectsList">
+          <div class="view-head">
+            <div>
+              <h1>Проекты</h1>
+              <p class="muted">Каждый ролик — отдельный проект: исходник, перевод, озвучка и готовое видео в одной папке.</p>
             </div>
-          </label>
+          </div>
 
-          <label class="field wide">
-            <span class="label-action">
-              <span>Текст образца</span>
-              <button type="button" id="transcribeRefBtn" class="text-btn">Распознать</button>
+          <div class="new-project drop-zone" id="newProjectDrop" role="button" tabindex="0">
+            <input type="file" id="newProjectFile" class="file-input" accept="video/*,audio/*,.mp4,.mov,.mkv,.webm,.avi,.m4v,.wav,.mp3,.m4a,.flac,.ogg">
+            <strong>Новый дубляж</strong>
+            <span>Перетащите сюда видео или аудио, или нажмите, чтобы выбрать файл</span>
+            <span class="new-project-target">Перевести на
+              <select id="newProjectTarget">
+<option value="English" selected>Английский</option>
+<option value="Russian">Русский</option>
+<option value="Ukrainian">Украинский</option>
+<option value="Spanish">Испанский</option>
+<option value="Portuguese">Португальский</option>
+<option value="German">Немецкий</option>
+<option value="French">Французский</option>
+<option value="Italian">Итальянский</option>
+<option value="Polish">Польский</option>
+<option value="Bulgarian">Болгарский</option>
+<option value="Turkish">Турецкий</option>
+<option value="Dutch">Нидерландский</option>
+<option value="Swedish">Шведский</option>
+<option value="Danish">Датский</option>
+<option value="Norwegian">Норвежский</option>
+<option value="Finnish">Финский</option>
+<option value="Greek">Греческий</option>
+<option value="Hebrew">Иврит</option>
+<option value="Arabic">Арабский</option>
+<option value="Hindi">Хинди</option>
+<option value="Japanese">Японский</option>
+<option value="Korean">Корейский</option>
+<option value="Chinese">Китайский</option>
+<option value="Malay">Малайский</option>
+<option value="Swahili">Суахили</option>
+              </select>
             </span>
-            <textarea name="refText" rows="2" placeholder="Что сказано в образце. Кнопка «Распознать» заполнит сама."></textarea>
-          </label>
+            <span id="newProjectProgress" class="upload-progress" hidden></span>
+          </div>
+
+          <div id="projectCards" class="project-cards"></div>
         </div>
 
-        <details class="accordion">
-          <summary>Дополнительно</summary>
-
-          <div class="row">
-            <label class="field">
-              <span>Модель Whisper</span>
-              <select name="whisperModel">
-                <option value="medium">medium — баланс</option>
-                <option value="large-v3">large-v3 — точнее, медленнее</option>
-                <option value="small">small — быстрее</option>
-                <option value="base">base</option>
-                <option value="tiny">tiny</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Whisper работает на</span>
-              <select name="whisperDevice">
-                <option value="cuda">Видеокарте (CUDA)</option>
-                <option value="cpu">Процессоре</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Точность Whisper</span>
-              <select name="whisperComputeType">
-                <option>float16</option>
-                <option>int8_float16</option>
-                <option>int8</option>
-                <option>float32</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Фраз за один запрос</span>
-              <input name="batchSize" type="number" min="1" max="24" value="8">
-            </label>
-          </div>
-
-          <label class="field wide">
-            <span>Стиль перевода</span>
-            <textarea name="style" rows="3">Natural spoken dubbing, concise timing-preserving translation. Keep merged fragments as one natural spoken phrase.</textarea>
-          </label>
-
-          <div class="row">
-            <label class="field">
-              <span>Склеивать при паузе до, с</span>
-              <input name="phraseMaxGap" type="number" min="0" max="3" step="0.1" value="0.8">
-            </label>
-            <label class="field">
-              <span>Длина фразы до, с</span>
-              <input name="phraseMaxDuration" type="number" min="2" max="30" step="0.5" value="12">
-            </label>
-          </div>
-
-          <label class="inline-check">
-            <input type="checkbox" name="phraseMerge" checked>
-            <span>Склеивать обрывки Whisper в целые фразы</span>
-          </label>
-
-          <div class="switch-group">
-            <div class="section-title">Запуск</div>
-            <div class="switches">
-              <label><input type="checkbox" name="skipWhisper"> <span>Не распознавать заново</span></label>
-              <label><input type="checkbox" name="resume"> <span>Продолжить с места остановки</span></label>
-              <label><input type="checkbox" name="dryRun"> <span>Только проверить</span></label>
+        <div id="projectView" hidden>
+          <div class="view-head">
+            <div class="project-title">
+              <button type="button" id="backToProjects" class="text-btn">← Проекты</button>
+              <input id="projectName" class="project-name" aria-label="Название проекта">
+              <p id="projectSource" class="muted"></p>
+            </div>
+            <div class="actions">
+              <button type="button" id="projectOpenFolder" class="secondary">Открыть папку</button>
             </div>
           </div>
-        </details>
 
-        <div class="actions">
-          <button type="submit" id="runBtn" class="primary">▶ 1. Распознать и перевести</button>
-          <button type="button" id="stopBtn" class="danger">■ Стоп</button>
-        </div>
-      </form>
+          <div id="projectError" class="error-banner" hidden></div>
 
-      <section class="panel steps-panel">
-        <div class="panel-head">
-          <h2>Как сделать дубляж</h2>
-        </div>
-        <ol class="steps">
-          <li><strong>Движки.</strong> Один раз выберите модель перевода и движок озвучки на вкладке <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</li>
-          <li><strong>Перевод.</strong> Перетащите аудио, выберите язык и нажмите «▶ 1. Распознать и перевести».</li>
-          <li><strong>Озвучка.</strong> Нажмите «▶ 2. Озвучить»: план перевода подставится сам.</li>
-          <li><strong>Готово.</strong> Файл <code>*.dub.wav</code> появится в списке «Файлы».</li>
-        </ol>
-      </section>
+          <nav class="stepper" aria-label="Шаги">
+            <button type="button" class="step active" data-step="source"><span class="step-num">1</span>Исходник</button>
+            <button type="button" class="step" data-step="voice"><span class="step-num">2</span>Голос</button>
+            <button type="button" class="step" data-step="review"><span class="step-num">3</span>Перевод</button>
+            <button type="button" class="step" data-step="result"><span class="step-num">4</span>Результат</button>
+          </nav>
 
-      <section class="panel dubbing-panel">
-        <div class="panel-head">
-          <h2>Озвучка</h2>
-          <button type="button" id="useLatestJsonlBtn" class="secondary">Последний план</button>
-        </div>
-
-        <label class="field wide">
-          <span>План озвучки (.dub.jsonl)</span>
-          <input name="jsonl" placeholder="Подставится сам после перевода" autocomplete="off">
-        </label>
-
-        <div class="row">
-          <label class="field">
-            <span>Скорость речи</span>
-            <input name="dubSpeed" type="number" min="0.5" max="1.5" step="0.05" value="1.0">
-          </label>
-          <label class="field" title="Сколько секунд фраза может заходить за свой тайминг, чтобы не обрывались окончания.">
-            <span>Запас на окончание, с</span>
-            <input name="dubTailRoom" type="number" min="0" max="2" step="0.05" value="0.6">
-          </label>
-        </div>
-
-        <div class="row">
-          <label class="field" title="Насколько можно ускорить слишком длинную фразу, прежде чем обрезать.">
-            <span>Макс. ускорение</span>
-            <input name="dubMaxAutoSpeed" type="number" min="1" max="1.5" step="0.01" value="1.18">
-          </label>
-          <label class="inline-check boxed-check">
-            <input type="checkbox" name="dubAutoFit" checked>
-            <span>Подгонять под тайминг</span>
-          </label>
-        </div>
-
-        <label class="field wide">
-          <span>Файл результата</span>
-          <input name="dubOutput" placeholder="Авто: имя плана + .wav" autocomplete="off">
-        </label>
-
-        <details class="accordion">
-          <summary>Постобработка</summary>
-          <label class="inline-check">
-            <input type="checkbox" name="dubPostCleanEnabled" checked>
-            <span>Очистка пауз от шумов</span>
-          </label>
-          <div class="row">
-            <label class="field">
-              <span>Сила</span>
-              <select name="dubPostCleanMode">
-                <option value="soft" selected>Мягко</option>
-                <option value="normal">Нормально</option>
-                <option value="hard">Жёстко</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Затухание, мс</span>
-              <input name="dubPostFadeMs" type="number" min="0" max="250" step="5" value="40">
-            </label>
-          </div>
-          <div class="row">
-            <label class="field">
-              <span>Мин. пауза, с</span>
-              <input name="dubPostMinPause" type="number" min="0.03" max="2" step="0.01" value="0.15">
-            </label>
-            <label class="inline-check boxed-check">
-              <input type="checkbox" name="dubPostNormalize" checked>
-              <span>Нормализация</span>
-            </label>
-          </div>
-          <label class="inline-check">
-            <input type="checkbox" name="dubKeepSegments">
-            <span>Сохранить WAV каждой фразы</span>
-          </label>
-        </details>
-
-        <button type="button" id="dubBtn" class="primary">▶ 2. Озвучить</button>
-      </section>
-
-      <section class="panel log-panel">
-        <div class="panel-head">
-          <h2>Лог</h2>
-          <span id="runtime" class="muted">00:00</span>
-        </div>
-        <pre id="log"></pre>
-      </section>
-
-      <section class="panel outputs-panel">
-        <div class="panel-head">
-          <h2>Файлы</h2>
-          <span id="fileCount" class="muted">0</span>
-        </div>
-        <div id="outputs" class="outputs"></div>
-      </section>
-    </section>
-    </section>
-
-    <section class="workspace-section" data-section="music">
-      <section class="grid music-grid">
-        <form id="musicForm" class="panel controls">
-          <div class="panel-head">
-            <h2>Музыка</h2>
-            <button type="button" id="useLatestAudioBtn" class="secondary">Latest WAV</button>
-          </div>
-
-          <label class="field wide">
-            <span>Голосовая дорожка</span>
-            <div class="input-action drop-zone" data-drop-kind="mixVoice" data-target="musicVoiceAudio">
-              <input name="musicVoiceAudio" placeholder="Готовый WAV из дубляжа" autocomplete="off">
-              <button type="button" class="secondary" data-pick-file="mixVoice">Выбрать</button>
-              <input type="file" class="file-input" data-file-input="mixVoice" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+          <section class="panel step-pane active" data-pane="source">
+            <div class="pane-grid">
+              <div id="sourcePlayer" class="media-box"></div>
+              <div>
+                <div class="row">
+                  <label class="field">
+                    <span>Язык оригинала</span>
+                    <select id="projectSourceLanguage">
+                      <option value="auto">Определить автоматически</option>
+<option value="English">Английский</option>
+<option value="Russian">Русский</option>
+<option value="Ukrainian">Украинский</option>
+<option value="Spanish">Испанский</option>
+<option value="Portuguese">Португальский</option>
+<option value="German">Немецкий</option>
+<option value="French">Французский</option>
+<option value="Italian">Итальянский</option>
+<option value="Polish">Польский</option>
+<option value="Bulgarian">Болгарский</option>
+<option value="Turkish">Турецкий</option>
+<option value="Dutch">Нидерландский</option>
+<option value="Swedish">Шведский</option>
+<option value="Danish">Датский</option>
+<option value="Norwegian">Норвежский</option>
+<option value="Finnish">Финский</option>
+<option value="Greek">Греческий</option>
+<option value="Hebrew">Иврит</option>
+<option value="Arabic">Арабский</option>
+<option value="Hindi">Хинди</option>
+<option value="Japanese">Японский</option>
+<option value="Korean">Корейский</option>
+<option value="Chinese">Китайский</option>
+<option value="Malay">Малайский</option>
+<option value="Swahili">Суахили</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Перевести на</span>
+                    <select id="projectTarget">
+<option value="English" selected>Английский</option>
+<option value="Russian">Русский</option>
+<option value="Ukrainian">Украинский</option>
+<option value="Spanish">Испанский</option>
+<option value="Portuguese">Португальский</option>
+<option value="German">Немецкий</option>
+<option value="French">Французский</option>
+<option value="Italian">Итальянский</option>
+<option value="Polish">Польский</option>
+<option value="Bulgarian">Болгарский</option>
+<option value="Turkish">Турецкий</option>
+<option value="Dutch">Нидерландский</option>
+<option value="Swedish">Шведский</option>
+<option value="Danish">Датский</option>
+<option value="Norwegian">Норвежский</option>
+<option value="Finnish">Финский</option>
+<option value="Greek">Греческий</option>
+<option value="Hebrew">Иврит</option>
+<option value="Arabic">Арабский</option>
+<option value="Hindi">Хинди</option>
+<option value="Japanese">Японский</option>
+<option value="Korean">Корейский</option>
+<option value="Chinese">Китайский</option>
+<option value="Malay">Малайский</option>
+<option value="Swahili">Суахили</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="inline-check">
+                  <input type="checkbox" id="projectSeparate" checked>
+                  <span>Отделить голос от фона: музыка и шумы оригинала останутся в ролике</span>
+                </label>
+                <p id="separatorHint" class="hint" hidden></p>
+                <div class="engine-summary">
+                  <div><span class="engine-kind">Перевод</span><strong data-llm-summary>—</strong></div>
+                  <div><span class="engine-kind">Озвучка</span><strong data-tts-summary>—</strong></div>
+                  <button type="button" class="text-btn" data-open-engines>Изменить</button>
+                </div>
+                <div class="actions">
+                  <button type="button" class="primary" data-run-stage="prepare" data-job-button>▶ Распознать и перевести</button>
+                  <button type="button" class="secondary" data-run-stage="all" data-job-button>Сделать всё сразу</button>
+                </div>
+                <p id="prepareSummary" class="hint"></p>
+              </div>
             </div>
-          </label>
+          </section>
 
-          <label class="field wide">
-            <span>Фоновая музыка</span>
-            <div class="input-action drop-zone" data-drop-kind="music" data-target="musicAudio">
-              <input name="musicAudio" placeholder="Трек будет зациклен под голос" autocomplete="off">
-              <button type="button" class="secondary" data-pick-file="music">Выбрать</button>
-              <input type="file" class="file-input" data-file-input="music" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+          <section class="panel step-pane" data-pane="voice">
+            <p class="hint">Каким голосом озвучить перевод. Движок: <strong data-tts-summary>—</strong> <button type="button" class="text-btn" data-open-engines>Изменить</button></p>
+            <div class="voice-modes">
+              <label class="voice-mode">
+                <input type="radio" name="voiceMode" value="original">
+                <strong>Голос оригинала</strong>
+                <span>Образец вырезается из ролика сам после шага 1.</span>
+                <div id="voiceOriginalInfo" class="voice-mode-body"></div>
+              </label>
+              <label class="voice-mode">
+                <input type="radio" name="voiceMode" value="file">
+                <strong>Свой образец</strong>
+                <span>10–30 секунд чистой речи нужного голоса.</span>
+                <div class="voice-mode-body">
+                  <div class="input-action">
+                    <button type="button" class="secondary" id="voiceFileBtn">Загрузить образец</button>
+                    <input type="file" id="voiceFileInput" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+                  </div>
+                  <div id="voiceFileInfo"></div>
+                  <textarea id="voiceRefText" rows="2" placeholder="Что сказано в образце. Пусто — распознается само."></textarea>
+                </div>
+              </label>
+              <label class="voice-mode">
+                <input type="radio" name="voiceMode" value="engine">
+                <strong>Голос движка</strong>
+                <span>Готовый голос выбранного движка, без клонирования.</span>
+                <div class="voice-mode-body">
+                  <input id="voiceEngineId" placeholder="Имя голоса (пусто — по умолчанию)">
+                </div>
+              </label>
             </div>
-          </label>
 
-          <label class="field wide">
-            <span class="label-action">
-              <span>Громкость музыки</span>
-              <strong id="musicVolumeDbValue" class="range-value">-18 dB</strong>
-            </span>
-            <input name="musicVolumeDb" type="range" min="-30" max="0" step="1" value="-18">
-          </label>
+            <details class="accordion">
+              <summary>Подгонка под тайминги</summary>
+              <div class="row">
+                <label class="field">
+                  <span>Скорость речи</span>
+                  <input id="timingSpeed" type="number" min="0.5" max="1.5" step="0.05">
+                </label>
+                <label class="field" title="На сколько секунд фраза может заходить за свой тайминг.">
+                  <span>Запас на окончание, с</span>
+                  <input id="timingTail" type="number" min="0" max="2" step="0.05">
+                </label>
+                <label class="field" title="Во сколько раз можно ускорить слишком длинную фразу.">
+                  <span>Макс. ускорение</span>
+                  <input id="timingMaxSpeed" type="number" min="1" max="1.6" step="0.01">
+                </label>
+                <label class="field">
+                  <span>Очистка пауз</span>
+                  <select id="timingClean">
+                    <option value="off">Выкл</option>
+                    <option value="soft">Мягко</option>
+                    <option value="normal">Нормально</option>
+                    <option value="hard">Жёстко</option>
+                  </select>
+                </label>
+              </div>
+            </details>
 
-          <label class="field wide">
-            <span>Output WAV</span>
-            <input name="musicOutput" placeholder="Auto: voice name + .music.wav" autocomplete="off">
-          </label>
+            <div class="actions">
+              <button type="button" class="primary" data-run-stage="voice" data-job-button>▶ Озвучить</button>
+            </div>
+            <div id="voiceTrackPlayer"></div>
+          </section>
 
-          <div class="actions">
-            <button type="button" id="musicMixBtn" class="primary">▶ Смешать с музыкой</button>
-            <button type="button" id="musicRefreshBtn" class="secondary">Обновить</button>
-          </div>
-        </form>
+          <section class="panel step-pane" data-pane="review">
+            <p class="hint">Перевод по фразам и как каждая легла в тайминг. Правка фраз и переозвучка по одной появятся в следующей версии.</p>
+            <div id="segmentsTable" class="segments"></div>
+          </section>
 
-        <section class="panel log-panel">
-          <div class="panel-head">
-            <h2>Лог</h2>
-            <span id="musicRuntime" class="muted">00:00</span>
-          </div>
-          <pre id="musicLog"></pre>
-        </section>
+          <section class="panel step-pane" data-pane="result">
+            <div class="pane-grid">
+              <div id="resultPlayer" class="media-box"></div>
+              <div>
+                <div class="mix-grid">
+                  <span>Голос</span><input type="range" id="mixVoice" min="0" max="1.5" step="0.05"><output id="mixVoiceOut"></output>
+                  <span>Фон оригинала</span><input type="range" id="mixBackground" min="0" max="1.5" step="0.05"><output id="mixBackgroundOut"></output>
+                  <span>Музыка</span><input type="range" id="mixMusic" min="0" max="1" step="0.05"><output id="mixMusicOut"></output>
+                </div>
+                <p id="backgroundHint" class="hint" hidden>Фона нет: при подготовке голос не отделялся от фона.</p>
+                <div class="input-action">
+                  <button type="button" class="secondary" id="musicFileBtn">Добавить музыку</button>
+                  <input type="file" id="musicFileInput" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+                  <span id="musicFileInfo" class="meta"></span>
+                </div>
+                <label class="inline-check">
+                  <input type="checkbox" id="mixLoudnorm" checked>
+                  <span>Выровнять громкость (−16 LUFS, как на YouTube)</span>
+                </label>
+                <div class="actions">
+                  <button type="button" class="primary" data-run-stage="export" data-job-button>▶ Собрать</button>
+                </div>
+                <div id="downloads" class="downloads"></div>
+              </div>
+            </div>
+          </section>
 
-        <section class="panel outputs-panel">
-          <div class="panel-head">
-            <h2>Файлы</h2>
-            <span id="musicFileCount" class="muted">0</span>
-          </div>
-          <div id="musicOutputs" class="outputs"></div>
-        </section>
+          <details class="panel accordion project-log">
+            <summary>Подробности (лог)</summary>
+            <pre id="projectLog" data-job-log></pre>
+          </details>
+        </div>
       </section>
-    </section>
 
-    <section class="workspace-section" data-section="transcription">
-      <section class="grid transcription-grid">
-        <form id="transcriptionForm" class="panel controls">
-          <div class="panel-head">
-            <h2>Транскрибация</h2>
-            <button type="button" id="transcriptionRefreshBtn" class="secondary">Обновить</button>
+      <!-- ============================== Tools -->
+      <section class="view" data-view="tools">
+        <div class="view-head">
+          <div>
+            <h1>Инструменты</h1>
+            <p class="muted">Отдельные операции без проекта: озвучить текст или сценарий, распознать запись, обработать голос, свести с музыкой.</p>
           </div>
-
-          <label class="field wide">
-            <span>Видео</span>
-            <div class="input-action drop-zone" data-drop-kind="transcribeVideo" data-target="transcribeVideo">
-              <input name="transcribeVideo" placeholder="Видео: аудиодорожка будет извлечена автоматически" autocomplete="off">
-              <button type="button" class="secondary" data-pick-file="transcribeVideo">Выбрать</button>
-              <input type="file" class="file-input" data-file-input="transcribeVideo" accept="video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wmv,.flv">
-            </div>
-          </label>
-
-          <label class="field wide">
-            <span>Аудио</span>
-            <div class="input-action drop-zone" data-drop-kind="transcribeAudio" data-target="transcribeAudio">
-              <input name="transcribeAudio" placeholder="Или отдельный аудиофайл" autocomplete="off">
-              <button type="button" class="secondary" data-pick-file="transcribeAudio">Выбрать</button>
-              <input type="file" class="file-input" data-file-input="transcribeAudio" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
-            </div>
-          </label>
-
-          <div class="row">
-            <label class="field">
-              <span>Whisper</span>
-              <select name="transcribeModel">
-                <option>medium</option>
-                <option>large-v3</option>
-                <option>small</option>
-                <option>base</option>
-                <option>tiny</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Язык</span>
-              <input name="transcribeLanguage" value="auto" placeholder="auto, ru, en, ...">
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Device</span>
-              <select name="transcribeDevice">
-                <option>cuda</option>
-                <option>cpu</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Compute</span>
-              <select name="transcribeComputeType">
-                <option>float16</option>
-                <option>int8_float16</option>
-                <option>int8</option>
-                <option>float32</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="field wide">
-            <span>Output prefix</span>
-            <input name="transcribeOutputPrefix" placeholder="Auto: hash + filename" autocomplete="off">
-          </label>
-
-          <input type="hidden" name="transcribeOutputDir" value="outputs">
-
-          <label class="inline-check">
-            <input type="checkbox" name="keepExtractedAudio">
-            <span>Keep extracted video WAV</span>
-          </label>
-
-          <div class="actions">
-            <button type="button" id="transcriptionBtn" class="primary">▶ Транскрибировать</button>
-            <button type="button" id="clearTranscriptionBtn" class="secondary">Очистить</button>
-          </div>
-        </form>
-
-        <section class="panel log-panel">
-          <div class="panel-head">
-            <h2>Лог</h2>
-            <span id="transcriptionRuntime" class="muted">00:00</span>
-          </div>
-          <pre id="transcriptionLog"></pre>
-        </section>
-
-        <section class="panel outputs-panel">
-          <div class="panel-head">
-            <h2>Файлы</h2>
-            <span id="transcriptionFileCount" class="muted">0</span>
-          </div>
-          <div id="transcriptionOutputs" class="outputs"></div>
-        </section>
-      </section>
-    </section>
-
-    <section class="workspace-section" data-section="translation">
+        </div>
+        <nav class="section-tabs" aria-label="Инструменты">
+        <button type="button" data-section-tab="translation" class="active">Перевод и озвучка текста</button>
+        <button type="button" data-section-tab="script">Сценарий с эмоциями</button>
+        <button type="button" data-section-tab="transcription">Транскрибация</button>
+        <button type="button" data-section-tab="clean">Обработка голоса</button>
+        <button type="button" data-section-tab="music">Сведение с музыкой</button>
+        </nav>
+<section class="workspace-section active" data-section="translation">
       <section class="grid translation-grid">
         <form id="translationForm" class="panel controls">
           <div class="panel-head">
@@ -524,7 +335,7 @@
             <label class="field wide">
               <span class="label-action">
                 <span>Reference text</span>
-                <button type="button" id="transcribeTranslateRefBtn" class="text-btn">Транскрибировать</button>
+                <button type="button" id="transcribeTranslateRefBtn" class="text-btn" data-job-button>Транскрибировать</button>
               </span>
               <textarea name="translateRefText" rows="2" placeholder="Текст, который произнесен в референсе"></textarea>
             </label>
@@ -602,7 +413,7 @@
             </div>
 
             <div class="actions">
-              <button type="button" id="translationBtn" class="primary">▶ Перевести</button>
+              <button type="button" id="translationBtn" class="primary" data-job-button>▶ Перевести</button>
             </div>
           </div>
 
@@ -692,7 +503,7 @@
             </div>
 
             <div class="actions">
-              <button type="button" id="translationVoiceBtn" class="primary">▶ Сгенерировать WAV</button>
+              <button type="button" id="translationVoiceBtn" class="primary" data-job-button>▶ Сгенерировать WAV</button>
             </div>
           </div>
 
@@ -771,7 +582,7 @@
             <h2>Лог</h2>
             <span id="translationRuntime" class="muted">00:00</span>
           </div>
-          <pre id="translationLog"></pre>
+          <pre id="translationLog" data-job-log></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -783,8 +594,7 @@
         </section>
       </section>
     </section>
-
-    <section class="workspace-section" data-section="script">
+<section class="workspace-section" data-section="script">
       <section class="grid script-grid">
         <form id="scriptForm" class="panel controls">
           <div class="panel-head">
@@ -807,7 +617,7 @@
             <label class="field wide">
               <span class="label-action">
                 <span>Reference text</span>
-                <button type="button" id="transcribeScriptRefBtn" class="text-btn">Транскрибировать</button>
+                <button type="button" id="transcribeScriptRefBtn" class="text-btn" data-job-button>Транскрибировать</button>
               </span>
               <textarea name="scriptRefText" rows="2" placeholder="Текст, который произнесен в референсе"></textarea>
             </label>
@@ -862,7 +672,7 @@
             <input type="hidden" name="scriptOutputDir" value="outputs">
 
             <div class="actions">
-              <button type="button" id="scriptPrepareBtn" class="primary">▶ Подготовить</button>
+              <button type="button" id="scriptPrepareBtn" class="primary" data-job-button>▶ Подготовить</button>
             </div>
           </div>
 
@@ -906,7 +716,7 @@
             </div>
 
             <div class="actions">
-              <button type="button" id="scriptVoiceBtn" class="primary">▶ Озвучить сценарий</button>
+              <button type="button" id="scriptVoiceBtn" class="primary" data-job-button>▶ Озвучить сценарий</button>
             </div>
           </div>
 
@@ -983,7 +793,7 @@
             <h2>Лог</h2>
             <span id="scriptRuntime" class="muted">00:00</span>
           </div>
-          <pre id="scriptLog"></pre>
+          <pre id="scriptLog" data-job-log></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -995,391 +805,104 @@
         </section>
       </section>
     </section>
-
-    <section class="workspace-section" data-section="youtube">
-      <section class="grid youtube-grid">
-        <form id="youtubeForm" class="panel controls">
+<section class="workspace-section" data-section="transcription">
+      <section class="grid transcription-grid">
+        <form id="transcriptionForm" class="panel controls">
           <div class="panel-head">
-            <h2>YouTube</h2>
-            <button type="button" id="youtubeRefreshBtn" class="secondary">Обновить</button>
+            <h2>Транскрибация</h2>
+            <button type="button" id="transcriptionRefreshBtn" class="secondary">Обновить</button>
           </div>
 
           <label class="field wide">
-            <span>URL</span>
-            <input name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+            <span>Видео</span>
+            <div class="input-action drop-zone" data-drop-kind="transcribeVideo" data-target="transcribeVideo">
+              <input name="transcribeVideo" placeholder="Видео: аудиодорожка будет извлечена автоматически" autocomplete="off">
+              <button type="button" class="secondary" data-pick-file="transcribeVideo">Выбрать</button>
+              <input type="file" class="file-input" data-file-input="transcribeVideo" accept="video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wmv,.flv">
+            </div>
+          </label>
+
+          <label class="field wide">
+            <span>Аудио</span>
+            <div class="input-action drop-zone" data-drop-kind="transcribeAudio" data-target="transcribeAudio">
+              <input name="transcribeAudio" placeholder="Или отдельный аудиофайл" autocomplete="off">
+              <button type="button" class="secondary" data-pick-file="transcribeAudio">Выбрать</button>
+              <input type="file" class="file-input" data-file-input="transcribeAudio" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
+            </div>
           </label>
 
           <div class="row">
             <label class="field">
-              <span>Режим</span>
-              <select name="youtubeMode">
-                <option value="video">Видео MP4</option>
-                <option value="audio">Аудио WAV</option>
-                <option value="video_audio">Видео + WAV</option>
-                <option value="subtitles">Субтитры</option>
+              <span>Whisper</span>
+              <select name="transcribeModel">
+                <option>medium</option>
+                <option>large-v3</option>
+                <option>small</option>
+                <option>base</option>
+                <option>tiny</option>
               </select>
             </label>
             <label class="field">
-              <span>Качество</span>
-              <select name="youtubeQuality">
-                <option value="best">Best</option>
-                <option value="2160">2160p</option>
-                <option value="1440">1440p</option>
-                <option value="1080">1080p</option>
-                <option value="720">720p</option>
-                <option value="480">480p</option>
-              </select>
+              <span>Язык</span>
+              <input name="transcribeLanguage" value="auto" placeholder="auto, ru, en, ...">
             </label>
           </div>
 
           <div class="row">
             <label class="field">
-              <span>Cookies</span>
-              <select name="youtubeCookiesBrowser">
-                <option value="none">None</option>
-                <option value="chrome">Chrome</option>
-                <option value="edge">Edge</option>
-                <option value="firefox">Firefox</option>
-                <option value="opera">Opera</option>
-                <option value="brave">Brave</option>
+              <span>Device</span>
+              <select name="transcribeDevice">
+                <option>cuda</option>
+                <option>cpu</option>
               </select>
             </label>
             <label class="field">
-              <span>Субтитры</span>
-              <div class="input-action">
-                <input name="youtubeSubtitleLanguages" value="ru,en,bg,es,pt" autocomplete="off">
-                <button type="button" id="youtubeDetectSubsBtn" class="secondary">Определить</button>
-              </div>
+              <span>Compute</span>
+              <select name="transcribeComputeType">
+                <option>float16</option>
+                <option>int8_float16</option>
+                <option>int8</option>
+                <option>float32</option>
+              </select>
             </label>
           </div>
-          <div id="youtubeSubtitleChips" class="subtitle-chips" hidden></div>
 
           <label class="field wide">
             <span>Output prefix</span>
-            <input name="youtubeOutputPrefix" placeholder="Auto: date + title + video id" autocomplete="off">
+            <input name="transcribeOutputPrefix" placeholder="Auto: hash + filename" autocomplete="off">
           </label>
 
-          <input type="hidden" name="youtubeOutputDir" value="inputs\youtube">
+          <input type="hidden" name="transcribeOutputDir" value="outputs">
+
+          <label class="inline-check">
+            <input type="checkbox" name="keepExtractedAudio">
+            <span>Keep extracted video WAV</span>
+          </label>
 
           <div class="actions">
-            <button type="button" id="youtubeDownloadBtn" class="primary">▶ Скачать</button>
-            <button type="button" id="youtubeCheckBtn" class="secondary">Проверить yt-dlp</button>
-            <button type="button" id="youtubeUpdateBtn" class="secondary">Обновить yt-dlp</button>
+            <button type="button" id="transcriptionBtn" class="primary" data-job-button>▶ Транскрибировать</button>
+            <button type="button" id="clearTranscriptionBtn" class="secondary">Очистить</button>
           </div>
         </form>
 
         <section class="panel log-panel">
           <div class="panel-head">
             <h2>Лог</h2>
-            <span id="youtubeRuntime" class="muted">00:00</span>
+            <span id="transcriptionRuntime" class="muted">00:00</span>
           </div>
-          <pre id="youtubeLog"></pre>
-        </section>
-
-        <section class="panel outputs-panel">
-          <div class="panel-head">
-            <h2>Загрузки</h2>
-            <span id="youtubeFileCount" class="muted">0</span>
-          </div>
-          <div id="youtubeOutputs" class="outputs youtube-outputs"></div>
-        </section>
-      </section>
-    </section>
-
-    <section class="workspace-section" data-section="content">
-      <section class="grid content-grid">
-        <form id="contentForm" class="panel controls">
-          <div class="panel-head">
-            <h2>Контент</h2>
-            <button type="button" id="contentRefreshBtn" class="secondary">Обновить</button>
-          </div>
-
-          <div class="form-section form-section-strong">
-            <div class="section-title">Источник</div>
-
-            <label class="field wide">
-              <span class="label-action">
-                <span>Subtitles</span>
-                <button type="button" id="useLatestSubtitlesBtn" class="text-btn">Latest subtitles</button>
-              </span>
-              <div class="input-action drop-zone" data-drop-kind="contentSubtitles" data-target="contentSubtitles">
-                <input name="contentSubtitles" placeholder="SRT/VTT из раздела YouTube" autocomplete="off">
-                <button type="button" class="secondary" data-pick-file="contentSubtitles">Выбрать</button>
-                <input type="file" class="file-input" data-file-input="contentSubtitles" accept=".srt,.vtt,.ttml,.txt,text/*">
-              </div>
-            </label>
-
-            <div class="row">
-              <label class="field">
-                <span>Язык сценария</span>
-                <select name="contentTargetLanguage">
-                  <option value="English">Английский</option>
-                  <option value="Russian" selected>Русский</option>
-                  <option value="Ukrainian">Украинский</option>
-                  <option value="Spanish">Испанский</option>
-                  <option value="Portuguese">Португальский</option>
-                  <option value="German">Немецкий</option>
-                  <option value="French">Французский</option>
-                  <option value="Italian">Итальянский</option>
-                  <option value="Polish">Польский</option>
-                  <option value="Bulgarian">Болгарский</option>
-                  <option value="Turkish">Турецкий</option>
-                  <option value="Dutch">Нидерландский</option>
-                  <option value="Swedish">Шведский</option>
-                  <option value="Danish">Датский</option>
-                  <option value="Norwegian">Норвежский</option>
-                  <option value="Finnish">Финский</option>
-                  <option value="Greek">Греческий</option>
-                  <option value="Hebrew">Иврит</option>
-                  <option value="Arabic">Арабский</option>
-                  <option value="Hindi">Хинди</option>
-                  <option value="Japanese">Японский</option>
-                  <option value="Korean">Корейский</option>
-                  <option value="Chinese">Китайский</option>
-                  <option value="Malay">Малайский</option>
-                  <option value="Swahili">Суахили</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Язык оригинала</span>
-                <input value="Определяется автоматически" disabled>
-              </label>
-            </div>
-
-          </div>
-
-          <div class="form-section form-section-strong">
-            <div class="section-title">Сценарий</div>
-
-            <div class="row">
-              <label class="field">
-                <span>Формат</span>
-                <select name="contentMode">
-                  <option>YouTube 8-15 minutes</option>
-                  <option>YouTube Shorts</option>
-                  <option>Rewrite deeper</option>
-                  <option>Make shorter</option>
-                  <option>Documentary explainer</option>
-                </select>
-              </label>
-              <label class="field">
-                <span class="label-action">
-                  <span>Минут</span>
-                  <span id="contentWordEstimate" class="muted"></span>
-                </span>
-                <input name="contentTargetDuration" type="number" min="0.5" max="60" step="0.5" value="10">
-              </label>
-            </div>
-
-            <label class="field wide">
-              <span>Переработка</span>
-              <select name="contentRewriteDepth">
-                <option value="strong" selected>Сильно: новый хук, порядок и переходы</option>
-                <option value="balanced">Аккуратно: факты ближе к источнику</option>
-                <option value="new_script">Новый сценарий: источник только как материал</option>
-              </select>
-            </label>
-
-            <label class="field wide">
-              <span>Стиль</span>
-              <textarea name="contentStyle" rows="3">Documentary YouTube narration, clear, engaging, with a strong hook and natural spoken pacing.</textarea>
-            </label>
-
-            <input type="hidden" name="contentOutputDir" value="outputs">
-
-            <div class="actions">
-              <button type="button" id="contentGenerateBtn" class="primary">▶ 1. Сгенерировать сценарий</button>
-            </div>
-          </div>
-
-          <details class="accordion">
-            <summary>Визуалы (опционально)</summary>
-
-            <label class="inline-check">
-              <input type="checkbox" name="contentGenerateVisuals">
-              <span>Генерировать раскадровку и image-промпты</span>
-            </label>
-
-            <div class="row">
-              <label class="field">
-                <span>Формат</span>
-                <select name="contentAspectRatio">
-                  <option>16:9</option>
-                  <option>9:16</option>
-                  <option>1:1</option>
-                  <option>4:5</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Кадров</span>
-                <input name="contentVisualCount" type="number" min="3" max="80" value="16">
-              </label>
-            </div>
-
-            <label class="field wide">
-              <span>Image style</span>
-              <textarea name="contentImageStyle" rows="2">Cinematic realistic documentary frame, high detail, natural light, editorial composition.</textarea>
-            </label>
-          </details>
-
-          <details class="accordion">
-            <summary>Настройки модели</summary>
-            <p class="hint">Модель общая для всех вкладок: <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</p>
-
-            <div class="row compact-row">
-              <label class="field">
-                <span>Temperature</span>
-                <input name="contentTemperature" type="number" min="0" max="1" step="0.05" value="0.45">
-              </label>
-            </div>
-
-            <label class="field wide">
-              <span>Префикс файлов</span>
-              <input name="contentOutputPrefix" placeholder="Авто: content + время" autocomplete="off">
-            </label>
-          </details>
-
-          <div class="form-section form-section-strong">
-            <div class="section-title">Озвучка</div>
-
-            <label class="field wide">
-              <span>Reference audio</span>
-              <div class="input-action drop-zone" data-drop-kind="contentReference" data-target="contentRefAudio">
-                <input name="contentRefAudio" placeholder="Референс голоса для озвучки контента" autocomplete="off">
-                <button type="button" class="secondary" data-pick-file="contentReference">Выбрать</button>
-                <input type="file" class="file-input" data-file-input="contentReference" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
-              </div>
-            </label>
-
-            <label class="field wide">
-              <span class="label-action">
-                <span>Reference text</span>
-                <button type="button" id="transcribeContentRefBtn" class="text-btn">Транскрибировать</button>
-              </span>
-              <textarea name="contentRefText" rows="2" placeholder="Текст, который произнесен в референсе"></textarea>
-            </label>
-
-            <label class="field wide">
-              <span class="label-action">
-                <span>Content script</span>
-                <button type="button" id="useLatestContentScriptBtn" class="text-btn">Latest content script</button>
-              </span>
-              <input name="contentScriptFile" placeholder="Auto: latest .content.script.txt" autocomplete="off">
-            </label>
-
-            <div class="actions">
-              <button type="button" id="contentPrepareVoiceBtn" class="primary">▶ 2. Паузы и эмоции</button>
-            </div>
-
-            <label class="field wide">
-              <span class="label-action">
-                <span>Voice JSONL</span>
-                <button type="button" id="useLatestContentJsonlBtn" class="text-btn">Latest content JSONL</button>
-              </span>
-              <input name="contentVoiceJsonl" placeholder="Авто: последний content .script.dub.jsonl" autocomplete="off">
-            </label>
-
-            <div class="actions">
-              <button type="button" id="contentVoiceBtn" class="primary">▶ 3. Озвучить контент</button>
-            </div>
-          </div>
-
-          <details class="accordion">
-            <summary>Настройки озвучки</summary>
-
-            <p class="hint">Движок и его качество задаются на вкладке <button type="button" class="text-btn" data-open-engines>⚙ Движки</button>.</p>
-
-            <div class="row">
-              <label class="field">
-                <span>Скорость речи</span>
-                <input name="contentVoiceSpeed" type="number" min="0.5" max="1.5" step="0.05" value="1.0">
-              </label>
-            </div>
-
-            <div class="row">
-              <label class="field">
-                <span>Tail room</span>
-                <input name="contentVoiceTailRoom" type="number" min="0" max="3" step="0.05" value="0.8">
-              </label>
-              <label class="field">
-                <span>Max auto speed</span>
-                <input name="contentVoiceMaxAutoSpeed" type="number" min="1" max="1.5" step="0.01" value="1.18">
-              </label>
-            </div>
-
-            <label class="field wide">
-              <span>Output WAV</span>
-              <input name="contentVoiceOutput" placeholder="Auto: content script name + .dub.wav" autocomplete="off">
-            </label>
-
-            <label class="field wide">
-              <span>Voice style</span>
-              <textarea name="contentVoiceStyle" rows="2">Expressive YouTube narration with natural pauses, clear emotion labels, and clean spoken text.</textarea>
-            </label>
-
-            <label class="inline-check">
-              <input type="checkbox" name="contentVoiceAutoFit" checked>
-              <span>Auto Fit</span>
-            </label>
-
-            <div class="form-section compact-section">
-              <div class="section-title">Постобработка</div>
-              <label class="inline-check">
-                <input type="checkbox" name="contentVoicePostCleanEnabled" checked>
-                <span>Очистка пауз</span>
-              </label>
-              <div class="row">
-                <label class="field">
-                  <span>Сила</span>
-                  <select name="contentVoicePostCleanMode">
-                    <option value="soft" selected>Мягко</option>
-                    <option value="normal">Нормально</option>
-                    <option value="hard">Жестко</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Fade ms</span>
-                  <input name="contentVoicePostFadeMs" type="number" min="0" max="250" step="5" value="40">
-                </label>
-              </div>
-              <div class="row">
-                <label class="field">
-                  <span>Min pause</span>
-                  <input name="contentVoicePostMinPause" type="number" min="0.03" max="2" step="0.01" value="0.15">
-                </label>
-                <label class="inline-check boxed-check">
-                  <input type="checkbox" name="contentVoicePostNormalize" checked>
-                  <span>Нормализация</span>
-                </label>
-              </div>
-            </div>
-
-            <label class="inline-check">
-              <input type="checkbox" name="contentVoiceKeepSegments">
-              <span>Keep segment WAV files</span>
-            </label>
-          </details>
-        </form>
-
-        <section class="panel log-panel">
-          <div class="panel-head">
-            <h2>Лог</h2>
-            <span id="contentRuntime" class="muted">00:00</span>
-          </div>
-          <pre id="contentLog"></pre>
+          <pre id="transcriptionLog" data-job-log></pre>
         </section>
 
         <section class="panel outputs-panel">
           <div class="panel-head">
             <h2>Файлы</h2>
-            <span id="contentFileCount" class="muted">0</span>
+            <span id="transcriptionFileCount" class="muted">0</span>
           </div>
-          <div id="contentOutputs" class="outputs"></div>
+          <div id="transcriptionOutputs" class="outputs"></div>
         </section>
       </section>
     </section>
-
-    <section class="workspace-section" data-section="clean">
+<section class="workspace-section" data-section="clean">
       <section class="grid clean-grid">
         <form id="cleanForm" class="panel controls">
           <div class="panel-head">
@@ -1565,7 +1088,7 @@
             <input name="cleanWavOutput" placeholder="Auto: source name + .clean.wav" autocomplete="off">
           </label>
 
-          <button type="button" id="cleanWavBtn" class="primary">▶ Обработать WAV</button>
+          <button type="button" id="cleanWavBtn" class="primary" data-job-button>▶ Обработать WAV</button>
         </form>
 
         <section class="panel compare-panel">
@@ -1589,7 +1112,7 @@
             <h2>Лог</h2>
             <span id="cleanRuntime" class="muted">00:00</span>
           </div>
-          <pre id="cleanLog"></pre>
+          <pre id="cleanLog" data-job-log></pre>
         </section>
 
         <section class="panel outputs-panel">
@@ -1601,155 +1124,209 @@
         </section>
       </section>
     </section>
-
-    <section class="workspace-section" data-section="engines">
-      <section class="grid engines-grid">
-        <form id="llmForm" class="panel controls" autocomplete="off">
+<section class="workspace-section" data-section="music">
+      <section class="grid music-grid">
+        <form id="musicForm" class="panel controls">
           <div class="panel-head">
-            <h2>Перевод (LLM)</h2>
-            <span id="llmStatus" class="badge neutral">—</span>
+            <h2>Музыка</h2>
+            <button type="button" id="useLatestAudioBtn" class="secondary">Latest WAV</button>
           </div>
-          <p class="hint">Любая модель: локальная (LM Studio, Ollama, llama.cpp, KoboldCpp, Jan, vLLM) или облачная по ключу (OpenRouter, OpenAI, DeepSeek, Groq, Gemini). Настройка общая для всех вкладок.</p>
 
           <label class="field wide">
-            <span>Где работает модель</span>
-            <select id="llmProvider"></select>
-          </label>
-          <p id="llmProviderHint" class="hint"></p>
-
-          <label class="field wide">
-            <span>Адрес сервера</span>
-            <input id="llmUrl" placeholder="Пусто = адрес по умолчанию">
-          </label>
-
-          <label class="field wide" id="llmKeyField">
-            <span>API-ключ <small id="llmKeyState" class="muted"></small></span>
-            <div class="input-action">
-              <input id="llmApiKey" type="password" placeholder="Ключ хранится только на этом компьютере (config/secrets.local.json)">
-              <button type="button" id="llmSaveKeyBtn" class="secondary">Сохранить</button>
+            <span>Голосовая дорожка</span>
+            <div class="input-action drop-zone" data-drop-kind="mixVoice" data-target="musicVoiceAudio">
+              <input name="musicVoiceAudio" placeholder="Готовый WAV из дубляжа" autocomplete="off">
+              <button type="button" class="secondary" data-pick-file="mixVoice">Выбрать</button>
+              <input type="file" class="file-input" data-file-input="mixVoice" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
             </div>
           </label>
 
           <label class="field wide">
-            <span>Модель</span>
-            <div class="input-action">
-              <input id="llmModel" list="llmModelList" placeholder="Выберите из списка или впишите имя">
-              <button type="button" id="llmRefreshModelsBtn" class="secondary">Обновить список</button>
+            <span>Фоновая музыка</span>
+            <div class="input-action drop-zone" data-drop-kind="music" data-target="musicAudio">
+              <input name="musicAudio" placeholder="Трек будет зациклен под голос" autocomplete="off">
+              <button type="button" class="secondary" data-pick-file="music">Выбрать</button>
+              <input type="file" class="file-input" data-file-input="music" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
             </div>
-            <datalist id="llmModelList"></datalist>
           </label>
-          <div id="llmModels" class="models"></div>
 
-          <details class="accordion">
-            <summary>Дополнительно</summary>
-            <label class="field">
-              <span>Контекст, токенов</span>
-              <input id="llmContext" type="number" min="2048" step="1024" value="8192">
-            </label>
-            <div class="switches">
-              <label><input type="checkbox" id="llmAutoLoad" checked> <span>Загружать модель автоматически (LM Studio)</span></label>
-              <label><input type="checkbox" id="llmUnloadOthers" checked> <span>Выгружать другие модели перед загрузкой</span></label>
-              <label><input type="checkbox" id="llmUnloadWhenDone" checked> <span>Выгружать после работы: освобождает видеопамять для озвучки</span></label>
-            </div>
-          </details>
+          <label class="field wide">
+            <span class="label-action">
+              <span>Громкость музыки</span>
+              <strong id="musicVolumeDbValue" class="range-value">-18 dB</strong>
+            </span>
+            <input name="musicVolumeDb" type="range" min="-30" max="0" step="1" value="-18">
+          </label>
+
+          <label class="field wide">
+            <span>Output WAV</span>
+            <input name="musicOutput" placeholder="Auto: voice name + .music.wav" autocomplete="off">
+          </label>
 
           <div class="actions">
-            <button type="button" id="llmTestBtn" class="primary">Проверить подключение</button>
-            <button type="button" id="llmUnloadBtn" class="secondary">Выгрузить модели</button>
-          </div>
-          <pre id="llmTestResult" class="test-result" hidden></pre>
-        </form>
-
-        <form id="ttsForm" class="panel controls" autocomplete="off">
-          <div class="panel-head">
-            <h2>Озвучка (TTS)</h2>
-            <span id="ttsStatus" class="badge neutral">—</span>
-          </div>
-          <p class="hint">Движки лежат в папке <code>engines/</code>. Свой движок добавляется копией <code>engines/_template</code>: две функции и паспорт <code>engine.json</code>.</p>
-
-          <label class="field wide">
-            <span>Движок</span>
-            <select id="ttsEngine"></select>
-          </label>
-          <div id="ttsEngineInfo" class="engine-info"></div>
-
-          <div id="ttsInstall" class="form-section"></div>
-
-          <label class="field">
-            <span>Устройство</span>
-            <select id="ttsDevice">
-              <option value="auto">Автоматически</option>
-              <option value="cuda">Видеокарта (CUDA)</option>
-              <option value="cpu">Процессор</option>
-            </select>
-          </label>
-
-          <div id="ttsSettings"></div>
-
-          <div class="form-section">
-            <div class="section-title">Пробная фраза</div>
-            <div class="row">
-              <label class="field wide">
-                <span>Текст</span>
-                <input id="ttsTestText" value="Привет! Это проверка голоса.">
-              </label>
-              <label class="field">
-                <span>Язык</span>
-                <select id="ttsTestLanguage">
-                  <option value="en">Английский</option>
-                  <option value="ru" selected>Русский</option>
-                  <option value="uk">Украинский</option>
-                  <option value="es">Испанский</option>
-                  <option value="pt">Португальский</option>
-                  <option value="de">Немецкий</option>
-                  <option value="fr">Французский</option>
-                  <option value="it">Итальянский</option>
-                  <option value="pl">Польский</option>
-                  <option value="bg">Болгарский</option>
-                  <option value="tr">Турецкий</option>
-                  <option value="nl">Нидерландский</option>
-                  <option value="sv">Шведский</option>
-                  <option value="da">Датский</option>
-                  <option value="no">Норвежский</option>
-                  <option value="fi">Финский</option>
-                  <option value="el">Греческий</option>
-                  <option value="he">Иврит</option>
-                  <option value="ar">Арабский</option>
-                  <option value="hi">Хинди</option>
-                  <option value="ja">Японский</option>
-                  <option value="ko">Корейский</option>
-                  <option value="zh">Китайский</option>
-                  <option value="ms">Малайский</option>
-                  <option value="sw">Суахили</option>
-                </select>
-              </label>
-            </div>
-            <p class="hint">Образец голоса для клонирования берётся из вкладки «Дубляж».</p>
-            <div class="actions">
-              <button type="button" id="ttsTestBtn" class="primary">▶ Озвучить пробную фразу</button>
-            </div>
-            <audio id="ttsTestPlayer" controls preload="none" hidden></audio>
+            <button type="button" id="musicMixBtn" class="primary" data-job-button>▶ Смешать с музыкой</button>
+            <button type="button" id="musicRefreshBtn" class="secondary">Обновить</button>
           </div>
         </form>
 
         <section class="panel log-panel">
           <div class="panel-head">
             <h2>Лог</h2>
-            <span id="enginesRuntime" class="muted">00:00</span>
+            <span id="musicRuntime" class="muted">00:00</span>
           </div>
-          <pre id="enginesLog"></pre>
+          <pre id="musicLog" data-job-log></pre>
+        </section>
+
+        <section class="panel outputs-panel">
+          <div class="panel-head">
+            <h2>Файлы</h2>
+            <span id="musicFileCount" class="muted">0</span>
+          </div>
+          <div id="musicOutputs" class="outputs"></div>
         </section>
       </section>
     </section>
+      </section>
 
-    <dialog id="previewDialog">
-      <div class="dialog-head">
-        <h2 id="previewTitle">Preview</h2>
-        <button type="button" id="closePreview" class="icon-btn" title="Закрыть">×</button>
-      </div>
-      <pre id="previewText"></pre>
-    </dialog>
-  </main>
-  <script src="/app.js"></script>
+      <!-- ============================== Settings -->
+      <section class="view" data-view="settings">
+        <div class="view-head">
+          <div>
+            <h1>Настройки</h1>
+            <p class="muted">Движки общие для всех проектов и инструментов. Хранятся только на этом компьютере.</p>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <form id="llmForm" class="panel controls" autocomplete="off">
+            <div class="panel-head">
+              <h2>Перевод (LLM)</h2>
+              <span id="llmStatus" class="badge neutral">—</span>
+            </div>
+            <p class="hint">Любая модель: локальная (LM Studio, Ollama, llama.cpp, KoboldCpp, Jan, vLLM) или облачная по ключу (OpenRouter, OpenAI, DeepSeek, Groq, Gemini).</p>
+            <label class="field wide">
+              <span>Где работает модель</span>
+              <select id="llmProvider"></select>
+            </label>
+            <p id="llmProviderHint" class="hint"></p>
+            <label class="field wide">
+              <span>Адрес сервера</span>
+              <input id="llmUrl" placeholder="Пусто = адрес по умолчанию">
+            </label>
+            <label class="field wide" id="llmKeyField">
+              <span>API-ключ <small id="llmKeyState" class="muted"></small></span>
+              <div class="input-action">
+                <input id="llmApiKey" type="password" placeholder="Хранится только на этом компьютере (config/secrets.local.json)">
+                <button type="button" id="llmSaveKeyBtn" class="secondary">Сохранить</button>
+              </div>
+            </label>
+            <label class="field wide">
+              <span>Модель</span>
+              <div class="input-action">
+                <input id="llmModel" list="llmModelList" placeholder="Выберите из списка или впишите имя">
+                <button type="button" id="llmRefreshModelsBtn" class="secondary">Обновить список</button>
+              </div>
+              <datalist id="llmModelList"></datalist>
+            </label>
+            <div id="llmModels" class="models"></div>
+            <details class="accordion">
+              <summary>Дополнительно</summary>
+              <label class="field">
+                <span>Контекст, токенов</span>
+                <input id="llmContext" type="number" min="2048" step="1024" value="8192">
+              </label>
+              <div class="switches">
+                <label><input type="checkbox" id="llmAutoLoad" checked> <span>Загружать модель автоматически (LM Studio)</span></label>
+                <label><input type="checkbox" id="llmUnloadOthers" checked> <span>Выгружать другие модели перед загрузкой</span></label>
+                <label><input type="checkbox" id="llmUnloadWhenDone" checked> <span>Выгружать после работы: освобождает видеопамять для озвучки</span></label>
+              </div>
+            </details>
+            <div class="actions">
+              <button type="button" id="llmTestBtn" class="primary">Проверить подключение</button>
+              <button type="button" id="llmUnloadBtn" class="secondary">Выгрузить модели</button>
+            </div>
+            <pre id="llmTestResult" class="test-result" hidden></pre>
+          </form>
+
+          <div class="panel controls" id="ttsPanel" data-engine-panel="tts">
+            <div class="panel-head">
+              <h2>Озвучка (TTS)</h2>
+              <span class="badge neutral" data-engine-status>—</span>
+            </div>
+            <p class="hint">Движки лежат в папке <code>engines/</code>. Свой движок добавляется копией <code>engines/_template</code>.</p>
+          </div>
+
+          <div class="panel controls" id="separationPanel" data-engine-panel="separation">
+            <div class="panel-head">
+              <h2>Отделение голоса от фона</h2>
+              <span class="badge neutral" data-engine-status>—</span>
+            </div>
+            <p class="hint">Голос идёт на распознавание и образец, а музыка и шумы оригинала остаются в готовом ролике.</p>
+          </div>
+
+          <form id="asrForm" class="panel controls" autocomplete="off">
+            <div class="panel-head">
+              <h2>Распознавание речи (Whisper)</h2>
+            </div>
+            <div class="row">
+              <label class="field">
+                <span>Модель</span>
+                <select id="asrModel">
+                  <option value="large-v3">large-v3 — точнее всего</option>
+                  <option value="medium">medium — баланс</option>
+                  <option value="small">small — быстрее</option>
+                  <option value="base">base</option>
+                  <option value="tiny">tiny</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Работает на</span>
+                <select id="asrDevice">
+                  <option value="cuda">Видеокарте (CUDA)</option>
+                  <option value="cpu">Процессоре</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Точность</span>
+                <select id="asrCompute">
+                  <option>float16</option>
+                  <option>int8_float16</option>
+                  <option>int8</option>
+                  <option>float32</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">Модель скачивается при первом запуске. На процессоре точность float16 недоступна, будет использована int8.</p>
+          </form>
+
+          <section class="panel log-panel settings-log">
+            <div class="panel-head">
+              <h2>Лог</h2>
+            </div>
+            <pre id="settingsLog" data-job-log></pre>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="jobBar" class="job-bar" hidden>
+    <div class="job-bar-text"><strong id="jobBarStage"></strong> <span id="jobBarDetail" class="muted"></span></div>
+    <div class="job-bar-track"><div id="jobBarFill" class="job-bar-fill"></div></div>
+    <span id="jobBarTime" class="muted">00:00</span>
+    <button type="button" id="stopBtn" class="danger">■ Стоп</button>
+  </div>
+
+  <dialog id="previewDialog">
+    <div class="dialog-head">
+      <h2 id="previewTitle">Preview</h2>
+      <button type="button" id="closePreview" class="icon-btn" title="Закрыть">×</button>
+    </div>
+    <pre id="previewText"></pre>
+  </dialog>
+
+  <script src="/core.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/tools.js"></script>
+  <script src="/projects.js"></script>
 </body>
 </html>

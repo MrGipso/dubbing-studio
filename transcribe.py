@@ -1,6 +1,8 @@
 import argparse
+import json
 import sys
 from pathlib import Path
+
 from faster_whisper import WhisperModel
 
 
@@ -19,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description='Transcribe audio with faster-whisper.')
     parser.add_argument('audio', help='Path to audio file')
     parser.add_argument('--model', default='medium', help='tiny, base, small, medium, large-v3, etc.')
-    parser.add_argument('--language', default='ru', help="Language code or 'auto' for detection")
+    parser.add_argument('--language', default='auto', help="Language code or 'auto' for detection")
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--compute-type', default='float16')
     parser.add_argument('--output-dir', default='outputs')
@@ -34,7 +36,10 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     language = None if args.language.lower() in ('auto', '') else args.language
-    model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+    compute_type = args.compute_type
+    if args.device == 'cpu' and 'float16' in compute_type:
+        compute_type = 'int8'  # float16 is not supported on CPU
+    model = WhisperModel(args.model, device=args.device, compute_type=compute_type)
     segments, info = model.transcribe(
         str(audio_path),
         language=language,
@@ -45,25 +50,43 @@ def main():
     stem = args.output_prefix.strip() or audio_path.stem
     txt_path = out_dir / f'{stem}.txt'
     srt_path = out_dir / f'{stem}.srt'
+    json_path = out_dir / f'{stem}.json'
 
     lines = []
     srt_blocks = []
-    for i, seg in enumerate(segments, start=1):
+    records = []
+    total = max(1, int(info.duration))
+    for seg in segments:
         text = seg.text.strip()
         if not text:
             continue
         lines.append(text)
         srt_blocks.append(
-            f"{i}\n{format_srt_time(seg.start)} --> {format_srt_time(seg.end)}\n{text}\n"
+            f"{len(srt_blocks) + 1}\n{format_srt_time(seg.start)} --> {format_srt_time(seg.end)}\n{text}\n"
         )
-        print(f"[{seg.start:7.2f} - {seg.end:7.2f}] {text}")
+        records.append({
+            "start": round(seg.start, 3),
+            "end": round(seg.end, 3),
+            "text": text,
+            "avg_logprob": round(seg.avg_logprob, 4),
+            "no_speech_prob": round(seg.no_speech_prob, 4),
+        })
+        print(f"[{seg.start:7.2f} - {seg.end:7.2f}] {text}", flush=True)
+        print(f"PROGRESS {min(total, int(seg.end))}/{total} Распознавание речи", flush=True)
 
     txt_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     srt_path.write_text('\n'.join(srt_blocks), encoding='utf-8')
+    json_path.write_text(json.dumps({
+        "language": info.language,
+        "language_probability": round(info.language_probability, 4),
+        "duration": round(info.duration, 3),
+        "segments": records,
+    }, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
     print(f"language={info.language}, probability={info.language_probability:.3f}")
     print(f"txt={txt_path.resolve()}")
     print(f"srt={srt_path.resolve()}")
+    print(f"json={json_path.resolve()}")
 
 
 if __name__ == '__main__':

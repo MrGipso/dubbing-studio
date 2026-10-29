@@ -5,72 +5,29 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import llm_client
+import project as projects
 import tts_engines
+from app_settings import llm_script_args, load_settings, save_settings
+from languages import LANGUAGE_NAMES_BY_ID
 
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
 OUTPUTS_DIR = ROOT / "outputs"
 INPUTS_DIR = ROOT / "inputs"
-YOUTUBE_DIR = INPUTS_DIR / "youtube"
 CONFIG_DIR = ROOT / "config"
-SETTINGS_FILE = CONFIG_DIR / "settings.local.json"
 POWERSHELL = os.environ.get("PIPELINE_UI_PWSH", "powershell.exe")
 
-DEFAULT_SETTINGS = {
-    "llm": {
-        "provider": "lmstudio",
-        "url": "",
-        "model": "",
-        "contextLength": 8192,
-        "autoLoad": True,
-        "unloadOthers": True,
-        # Free VRAM for the TTS engine after each LLM stage.
-        "unloadWhenDone": True,
-    },
-    "tts": {
-        "engine": "omnivoice",
-        "device": "auto",
-        "engines": {},
-    },
-}
-LANGUAGE_NAMES_BY_ID = {
-    "en": "English",
-    "ru": "Russian",
-    "uk": "Ukrainian",
-    "es": "Spanish",
-    "pt": "Portuguese",
-    "de": "German",
-    "fr": "French",
-    "it": "Italian",
-    "pl": "Polish",
-    "bg": "Bulgarian",
-    "tr": "Turkish",
-    "nl": "Dutch",
-    "sv": "Swedish",
-    "da": "Danish",
-    "no": "Norwegian",
-    "fi": "Finnish",
-    "el": "Greek",
-    "he": "Hebrew",
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
-    "ms": "Malay",
-    "sw": "Swahili",
-}
-LANGUAGE_IDS = {name.lower(): code for code, name in LANGUAGE_NAMES_BY_ID.items()}
 
 
 class JobState:
@@ -84,6 +41,9 @@ class JobState:
         self.kind = ""
         self.lines = []
         self.result = {}
+        self.progress = None
+        self.stage = None
+        self.meta = {}
 
     def snapshot(self):
         with self.lock:
@@ -97,51 +57,51 @@ class JobState:
                 "kind": self.kind,
                 "lines": self.lines[-1000:],
                 "result": self.result,
+                "progress": self.progress,
+                "stage": self.stage,
+                "meta": self.meta,
             }
 
     def append(self, line):
+        line = line.rstrip("\n")
+        parsed = parse_progress(line)
         with self.lock:
-            self.lines.append(line.rstrip("\n"))
+            if parsed:
+                kind, value = parsed
+                if kind == "stage":
+                    self.stage = value
+                    self.progress = None
+                    self.lines.append(f"== {value['label']} ({value['done']}/{value['total']}) ==")
+                else:
+                    self.progress = value
+                return
+            self.lines.append(line)
             if len(self.lines) > 3000:
                 self.lines = self.lines[-3000:]
 
 
+def parse_progress(line):
+    """'PROGRESS 3/10 label' or 'STAGE 2/4 label' -> (kind, {done, total, label})."""
+    for prefix, kind in (("PROGRESS ", "progress"), ("STAGE ", "stage")):
+        if line.startswith(prefix):
+            head, _, label = line[len(prefix):].partition(" ")
+            done, _, total = head.partition("/")
+            try:
+                return kind, {"done": int(done), "total": max(1, int(total)), "label": label.strip()}
+            except ValueError:
+                return None
+    return None
+
+
 JOB = JobState()
-SETTINGS_LOCK = threading.Lock()
 
 
 # --------------------------------------------------------------------------
 # Engine settings (shared by every tab, saved in config/settings.local.json)
 
 
-def load_settings():
-    data = {}
-    if SETTINGS_FILE.is_file():
-        try:
-            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            data = {}
-    settings = json.loads(json.dumps(DEFAULT_SETTINGS))
-    for section in ("llm", "tts"):
-        settings[section].update(data.get(section) or {})
-    return settings
 
 
-def save_settings(update):
-    with SETTINGS_LOCK:
-        settings = load_settings()
-        for section in ("llm", "tts"):
-            incoming = update.get(section)
-            if not isinstance(incoming, dict):
-                continue
-            if section == "tts" and isinstance(incoming.get("engines"), dict):
-                engines = settings["tts"].setdefault("engines", {})
-                for engine_id, values in incoming.pop("engines").items():
-                    engines.setdefault(engine_id, {}).update(values or {})
-            settings[section].update(incoming)
-        CONFIG_DIR.mkdir(exist_ok=True)
-        SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return settings
 
 
 def llm_from_settings(llm, timeout=20):
@@ -156,39 +116,8 @@ def llm_from_settings(llm, timeout=20):
     )
 
 
-def llm_script_args(settings=None):
-    """CLI arguments for translate_srt.py / prepare_script.py / ... (no API key here)."""
-    llm = (settings or load_settings())["llm"]
-    args = ["--llm-provider", str(llm.get("provider") or "lmstudio")]
-    if llm.get("url"):
-        args += ["--llm-url", str(llm["url"])]
-    if llm.get("model"):
-        args += ["--model", str(llm["model"])]
-    args += ["--lm-context-length", str(int(llm.get("contextLength") or 8192))]
-    if not llm.get("autoLoad", True):
-        args.append("--no-auto-load-model")
-    if not llm.get("unloadOthers", True):
-        args.append("--keep-other-models")
-    if llm.get("unloadWhenDone", True):
-        args.append("--unload-model-when-done")
-    return args
 
 
-def llm_powershell_args(settings=None):
-    llm = (settings or load_settings())["llm"]
-    args = ["-LlmProvider", str(llm.get("provider") or "lmstudio")]
-    if llm.get("url"):
-        args += ["-LlmUrl", str(llm["url"])]
-    if llm.get("model"):
-        args += ["-LlmModel", str(llm["model"])]
-    args += ["-LmContextLength", str(int(llm.get("contextLength") or 8192))]
-    if not llm.get("autoLoad", True):
-        args.append("-NoAutoLoadModel")
-    if not llm.get("unloadOthers", True):
-        args.append("-KeepOtherModels")
-    if llm.get("unloadWhenDone", True):
-        args.append("-UnloadModelWhenDone")
-    return args
 
 
 def job_environment():
@@ -202,12 +131,11 @@ def job_environment():
     return env
 
 
-def engines_payload():
-    settings = load_settings()
-    engines = tts_engines.list_engines()
+def engines_payload(kind="tts"):
+    engines = tts_engines.list_engines(kind=kind)
     for manifest in engines:
         if "id" in manifest and "settings" in manifest:
-            manifest["values"] = tts_engines.resolve_settings(manifest, (settings["tts"].get("engines") or {}).get(manifest["id"]))
+            manifest["values"] = tts_engines.resolve_settings(manifest)
     return engines
 
 
@@ -215,7 +143,13 @@ def settings_payload():
     settings = load_settings()
     providers = list(llm_client.load_providers().values())
     keys = {item["id"]: llm_client.mask_key(llm_client.stored_api_key(item["id"])) for item in providers}
-    return {"settings": settings, "providers": providers, "keys": keys, "engines": engines_payload()}
+    return {
+        "settings": settings,
+        "providers": providers,
+        "keys": keys,
+        "engines": engines_payload("tts"),
+        "separators": engines_payload("separator"),
+    }
 
 
 def dub_command(jsonl, output, payload, prefix, natural=False):
@@ -252,8 +186,6 @@ def dub_command(jsonl, output, payload, prefix, natural=False):
     return command
 
 
-def language_id_for(language):
-    return LANGUAGE_IDS.get(str(language or "").strip().lower(), "")
 
 
 def json_response(handler, payload, status=200):
@@ -284,10 +216,6 @@ def output_file_from_name(name):
     if scoped_root not in file_path.parents or not file_path.is_file():
         return None
     return file_path
-
-
-def youtube_file_from_query(query):
-    return scoped_file_from_query(query, YOUTUBE_DIR)
 
 
 def audio_file_from_query(query):
@@ -407,8 +335,6 @@ def unique_input_path(filename, kind):
         "transcribeAudio": "transcribe",
         "translateReference": "translate_reference",
         "scriptReference": "script_reference",
-        "contentSubtitles": "content_subtitles",
-        "contentReference": "content_reference",
         "cleanWav": "clean_wav",
     }
     prefix = prefixes.get(kind, "audio")
@@ -420,17 +346,8 @@ def unique_input_path(filename, kind):
     return candidate
 
 
-def safe_relative_output_dir(value, default_dir):
-    raw = str(value or "").strip()
-    if not raw:
-        return default_dir
-    path = Path(raw)
-    if not path.is_absolute():
-        path = ROOT / path
-    return path.resolve()
-
-
-def upload_file(handler):
+def receive_upload(handler, destination_for):
+    """Stream a multipart "file" field to destination_for(filename, fields) and return its path."""
     content_type = handler.headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
         raise ValueError("Expected multipart/form-data upload.")
@@ -453,20 +370,31 @@ def upload_file(handler):
     if not getattr(file_item, "filename", ""):
         raise ValueError("Uploaded file has no filename.")
 
-    kind = str(form.getfirst("kind", "audio"))
-    destination = unique_input_path(file_item.filename, kind)
+    fields = {key: form.getfirst(key, "") for key in form.keys() if key != "file"}
+    destination = Path(destination_for(Path(file_item.filename).name, fields))
+    destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("wb") as f:
         while True:
             chunk = file_item.file.read(1024 * 1024)
             if not chunk:
                 break
             f.write(chunk)
+    return destination, fields
 
+
+def upload_file(handler):
+    destination, _ = receive_upload(handler, lambda name, fields: unique_input_path(name, str(fields.get("kind") or "audio")))
     return {
         "path": str(destination),
         "name": destination.name,
         "size": destination.stat().st_size,
     }
+
+
+def safe_upload_name(name, fallback="file"):
+    stem = safe_stem(name) or fallback
+    suffix = re.sub(r"[^A-Za-z0-9.]", "", Path(name).suffix.lower())[:8]
+    return stem + suffix
 
 
 def terminate_process_tree(process):
@@ -482,49 +410,6 @@ def terminate_process_tree(process):
     process.terminate()
 
 
-def choose_file(kind):
-    titles = {
-        "reference": "Choose reference audio",
-        "music": "Choose background music",
-        "mixVoice": "Choose generated voice track",
-        "transcribeVideo": "Choose video to transcribe",
-        "transcribeAudio": "Choose audio to transcribe",
-        "translateReference": "Choose translation reference audio",
-        "scriptReference": "Choose script voice reference audio",
-        "contentSubtitles": "Choose subtitles for content generation",
-        "contentReference": "Choose content voice reference audio",
-        "cleanWav": "Choose WAV to clean",
-    }
-    title = titles.get(kind, "Choose audio to translate")
-    media_filter = "Video files (*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.wmv;*.flv)|*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.wmv;*.flv|Audio files (*.wav;*.mp3;*.m4a;*.flac;*.ogg)|*.wav;*.mp3;*.m4a;*.flac;*.ogg|All files (*.*)|*.*"
-    audio_filter = "Audio files (*.wav;*.mp3;*.m4a;*.flac;*.ogg)|*.wav;*.mp3;*.m4a;*.flac;*.ogg|All files (*.*)|*.*"
-    subtitle_filter = "Subtitle files (*.srt;*.vtt;*.ttml;*.txt)|*.srt;*.vtt;*.ttml;*.txt|All files (*.*)|*.*"
-    if kind == "contentSubtitles":
-        file_filter = subtitle_filter
-    else:
-        file_filter = media_filter if kind == "transcribeVideo" else audio_filter
-    script = rf"""
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = '{title}'
-$dialog.Filter = '{file_filter}'
-$dialog.InitialDirectory = '{str(INPUTS_DIR if INPUTS_DIR.is_dir() else ROOT)}'
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{
-  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-  Write-Output $dialog.FileName
-}}
-"""
-    result = subprocess.run(
-        [POWERSHELL, "-NoProfile", "-STA", "-Command", script],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "File picker failed.").strip())
-    return result.stdout.strip()
 
 
 def build_reference_transcribe_command(payload):
@@ -584,48 +469,6 @@ def list_outputs():
     return files
 
 
-def list_youtube_downloads():
-    YOUTUBE_DIR.mkdir(parents=True, exist_ok=True)
-    files = []
-    for path in sorted(YOUTUBE_DIR.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
-        if not path.is_file():
-            continue
-        stat = path.stat()
-        files.append(
-            {
-                "name": path.name,
-                "path": str(path),
-                "size": stat.st_size,
-                "mtime": stat.st_mtime,
-                "kind": path.suffix.lower().lstrip(".") or "file",
-            }
-        )
-    return files
-
-
-def latest_youtube_download(media_kind=""):
-    files = list_youtube_downloads()
-    if media_kind == "audio":
-        files = [item for item in files if item["kind"] in {"wav", "mp3", "m4a", "flac", "ogg"}]
-    elif media_kind == "video":
-        files = [item for item in files if item["kind"] in {"mp4", "mov", "mkv", "avi", "webm", "m4v", "wmv", "flv"}]
-    elif media_kind in {"subtitle", "subtitles"}:
-        files = [item for item in files if item["kind"] in {"srt", "vtt", "ttml", "srv3", "txt"}]
-    return files[0]["path"] if files else ""
-
-
-def latest_dub_jsonl():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
-    candidates = [
-        path for path in OUTPUTS_DIR.glob("*.dub.jsonl")
-        if ".partial." not in path.name and path.is_file()
-    ]
-    if not candidates:
-        return ""
-    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
-    return str(candidates[0])
-
-
 def latest_output_audio():
     OUTPUTS_DIR.mkdir(exist_ok=True)
     audio_suffixes = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
@@ -667,117 +510,6 @@ def latest_script_jsonl():
         return ""
     candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
     return str(candidates[0])
-
-
-def latest_content_script_text():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
-    candidates = [
-        path for path in OUTPUTS_DIR.glob("*.content.script.txt")
-        if path.is_file()
-    ]
-    if not candidates:
-        return ""
-    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
-    return str(candidates[0])
-
-
-def latest_content_script_jsonl():
-    OUTPUTS_DIR.mkdir(exist_ok=True)
-    candidates = [
-        path for path in OUTPUTS_DIR.glob("*.script.dub.jsonl")
-        if ".partial." not in path.name and path.is_file() and path.name.startswith("content_")
-    ]
-    if not candidates:
-        return ""
-    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
-    return str(candidates[0])
-
-
-def build_command(payload):
-    script = ROOT / "run_translate_audio.ps1"
-    audio = str(payload.get("audio") or "").strip()
-    if not audio:
-        raise ValueError("Audio path is required.")
-    if not payload.get("skipWhisper") and not Path(audio).is_file():
-        raise ValueError(f"Audio file was not found: {audio}")
-
-    command = [
-        POWERSHELL,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(script),
-        "-Audio",
-        audio,
-        "-TargetLanguage",
-        str(payload.get("targetLanguage") or "English"),
-        "-SourceLanguage",
-        str(payload.get("sourceLanguage") or "Russian"),
-        "-WhisperModel",
-        str(payload.get("whisperModel") or "medium"),
-        "-WhisperLanguage",
-        str(payload.get("whisperLanguage") or language_id_for(payload.get("sourceLanguage")) or "auto"),
-        "-WhisperDevice",
-        str(payload.get("whisperDevice") or "cuda"),
-        "-WhisperComputeType",
-        str(payload.get("whisperComputeType") or "float16"),
-        "-OutputDir",
-        str(payload.get("outputDir") or "outputs"),
-        *llm_powershell_args(),
-        "-BatchSize",
-        str(int(payload.get("batchSize") or 8)),
-        "-Style",
-        str(payload.get("style") or "Natural spoken dubbing, concise timing-preserving translation."),
-        "-PhraseMaxGap",
-        str(float(payload.get("phraseMaxGap") or 0.8)),
-        "-PhraseMaxDuration",
-        str(float(payload.get("phraseMaxDuration") or 12.0)),
-    ]
-
-    output_prefix = str(payload.get("outputPrefix") or "").strip()
-    if output_prefix:
-        command.extend(["-OutputPrefix", output_prefix])
-
-    target_language_id = str(payload.get("targetLanguageId") or "").strip()
-    if not target_language_id:
-        target_language_id = language_id_for(payload.get("targetLanguage"))
-    if target_language_id:
-        command.extend(["-TargetLanguageId", target_language_id])
-
-    optional_strings = {
-        "refAudio": "-RefAudio",
-        "refText": "-RefText",
-    }
-    for key, flag in optional_strings.items():
-        value = str(payload.get(key) or "").strip()
-        if value:
-            command.extend([flag, value])
-
-    switches = {
-        "skipWhisper": "-SkipWhisper",
-        "resume": "-Resume",
-        "dryRun": "-DryRun",
-        "noMergePhrases": "-NoMergePhrases",
-    }
-    for key, flag in switches.items():
-        if payload.get(key):
-            command.append(flag)
-
-    return command
-
-
-def build_dubbing_command(payload):
-    jsonl = str(payload.get("jsonl") or "").strip()
-    if not jsonl:
-        jsonl = latest_dub_jsonl()
-    if not jsonl:
-        raise ValueError("Voice plan (.dub.jsonl) is required: run the translation first.")
-    if not Path(jsonl).is_file():
-        raise ValueError(f"Voice plan was not found: {jsonl}")
-
-    output = str(payload.get("dubOutput") or "").strip()
-    return dub_command(jsonl, output, payload, "dub")
 
 
 def append_voice_postprocess_args(command, payload, prefix):
@@ -1209,203 +941,6 @@ def build_script_voice_command(payload):
     return dub_command(jsonl, output, payload, "scriptVoice", natural=bool(payload.get("scriptVoiceNaturalDuration")))
 
 
-def build_youtube_download_command(payload):
-    url = str(payload.get("youtubeUrl") or "").strip()
-    if not url:
-        raise ValueError("YouTube URL is required.")
-    if not re.match(r"^https?://", url, re.I):
-        raise ValueError("YouTube URL should start with http:// or https://.")
-
-    output_dir = safe_relative_output_dir(payload.get("youtubeOutputDir"), YOUTUBE_DIR)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    mode = str(payload.get("youtubeMode") or "video").strip().lower()
-    quality = str(payload.get("youtubeQuality") or "best").strip().lower()
-    subtitle_languages = str(payload.get("youtubeSubtitleLanguages") or "ru,en,bg,es,pt").strip()
-    cookies_browser = str(payload.get("youtubeCookiesBrowser") or "none").strip().lower()
-    output_prefix = str(payload.get("youtubeOutputPrefix") or "").strip()
-
-    command = [
-        sys.executable or "python",
-        str(ROOT / "download_youtube.py"),
-        "--url",
-        url,
-        "--mode",
-        mode,
-        "--quality",
-        quality,
-        "--output-dir",
-        str(output_dir),
-    ]
-    if subtitle_languages:
-        command.extend(["--subtitle-languages", subtitle_languages])
-    if cookies_browser and cookies_browser != "none":
-        command.extend(["--cookies-from-browser", cookies_browser])
-    if output_prefix:
-        command.extend(["--output-prefix", output_prefix])
-    return command, output_dir
-
-
-def build_content_generate_command(payload):
-    subtitles = str(payload.get("contentSubtitles") or "").strip()
-    if not subtitles:
-        subtitles = latest_youtube_download("subtitle")
-    if not subtitles:
-        raise ValueError("Subtitles file is required.")
-    if not Path(subtitles).is_file():
-        raise ValueError(f"Subtitles file was not found: {subtitles}")
-
-    text_for_hash = subtitles + str(payload.get("contentMode") or "") + str(payload.get("contentRewriteDepth") or "")
-    fallback_prefix = f"content_{time.strftime('%Y%m%d_%H%M%S')}_{hashlib.sha1(text_for_hash.encode('utf-8')).hexdigest()[:8]}"
-    output_prefix = safe_output_prefix(payload.get("contentOutputPrefix"), fallback_prefix)
-
-    command = [
-        sys.executable or "python",
-        str(ROOT / "generate_content_from_subtitles.py"),
-        "--subtitles",
-        subtitles,
-        "--source-language",
-        str(payload.get("contentSourceLanguage") or "auto"),
-        "--target-language",
-        str(payload.get("contentTargetLanguage") or "Russian"),
-        "--mode",
-        str(payload.get("contentMode") or "YouTube 8-15 minutes"),
-        "--rewrite-depth",
-        str(payload.get("contentRewriteDepth") or "strong"),
-        "--target-duration-minutes",
-        str(float(payload.get("contentTargetDuration") or 10.0)),
-        "--style",
-        str(payload.get("contentStyle") or "Documentary YouTube narration, clear and engaging."),
-        "--image-style",
-        str(payload.get("contentImageStyle") or "Cinematic realistic documentary frame, high detail."),
-        "--aspect-ratio",
-        str(payload.get("contentAspectRatio") or "16:9"),
-        "--visual-count",
-        str(int(payload.get("contentVisualCount") or 16)),
-        *llm_script_args(),
-        "--output-dir",
-        str(payload.get("contentOutputDir") or "outputs"),
-        "--output-prefix",
-        output_prefix,
-        "--temperature",
-        str(float(payload.get("contentTemperature") or 0.45)),
-    ]
-    if not payload.get("contentGenerateVisuals"):
-        command.append("--voice-only")
-    return command
-
-
-def content_script_base(script_path):
-    name = Path(script_path).name
-    if name.endswith(".content.script.txt"):
-        name = name[: -len(".content.script.txt")]
-    else:
-        name = Path(name).stem
-    return safe_output_prefix("", name or "content_voice")
-
-
-def build_content_voice_prepare_command(payload):
-    script_file = str(payload.get("contentScriptFile") or "").strip()
-    if not script_file:
-        script_file = latest_content_script_text()
-    if not script_file:
-        raise ValueError("Content script file is required.")
-    script_path = Path(script_file)
-    if not script_path.is_file():
-        raise ValueError(f"Content script file was not found: {script_file}")
-
-    ref_audio = str(payload.get("contentRefAudio") or "").strip()
-    if ref_audio and not Path(ref_audio).is_file():
-        raise ValueError(f"Content reference audio was not found: {ref_audio}")
-    ref_text = str(payload.get("contentRefText") or "").strip()
-
-    target_language = str(payload.get("contentTargetLanguage") or "Russian").strip() or "Russian"
-    language_id = language_id_for(target_language) or "ru"
-    language_name = LANGUAGE_NAMES_BY_ID.get(language_id, target_language)
-    output_prefix = safe_output_prefix(payload.get("contentVoiceOutputPrefix"), content_script_base(script_path))
-
-    command = [
-        sys.executable or "python",
-        str(ROOT / "prepare_script.py"),
-        "--text-file",
-        str(script_path),
-        "--language",
-        language_name,
-        "--language-id",
-        language_id,
-        *llm_script_args(),
-        "--output-dir",
-        str(payload.get("contentOutputDir") or "outputs"),
-        "--output-prefix",
-        output_prefix,
-        "--temperature",
-        str(float(payload.get("contentVoiceTemperature") or payload.get("contentTemperature") or 0.35)),
-        "--style",
-        str(payload.get("contentVoiceStyle") or "Expressive YouTube narration with natural pauses, clear emotion labels, and clean spoken text."),
-    ]
-    if ref_audio:
-        command.extend(["--ref-audio", ref_audio])
-    if ref_text:
-        command.extend(["--ref-text", ref_text])
-    return command
-
-
-def build_content_voice_command(payload):
-    jsonl = str(payload.get("contentVoiceJsonl") or "").strip()
-    if not jsonl:
-        jsonl = latest_content_script_jsonl()
-    if not jsonl:
-        raise ValueError("Content voice plan (.script.dub.jsonl) is required.")
-    if not Path(jsonl).is_file():
-        raise ValueError(f"Content voice plan was not found: {jsonl}")
-    output = str(payload.get("contentVoiceOutput") or "").strip()
-    return dub_command(jsonl, output, payload, "contentVoice")
-
-
-def build_ytdlp_check_command():
-    return [sys.executable or "python", str(ROOT / "download_youtube.py"), "--check"]
-
-
-def build_ytdlp_update_command():
-    return [sys.executable or "python", str(ROOT / "download_youtube.py"), "--update"]
-
-
-def build_youtube_subtitles_command(payload):
-    url = str(payload.get("youtubeUrl") or "").strip()
-    if not url:
-        raise ValueError("YouTube URL is required.")
-    if not re.match(r"^https?://", url, re.I):
-        raise ValueError("YouTube URL should start with http:// or https://.")
-
-    cookies_browser = str(payload.get("youtubeCookiesBrowser") or "none").strip().lower()
-    command = [
-        sys.executable or "python",
-        str(ROOT / "download_youtube.py"),
-        "--list-subs",
-        "--url",
-        url,
-    ]
-    if cookies_browser and cookies_browser != "none":
-        command.extend(["--cookies-from-browser", cookies_browser])
-    return command
-
-
-def detect_youtube_subtitles(payload):
-    result = subprocess.run(
-        build_youtube_subtitles_command(payload),
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=190,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "Subtitle detection failed.").strip())
-    return json.loads(result.stdout)
-
-
 def pump_output(process, on_complete=None):
     try:
         for line in process.stdout:
@@ -1428,7 +963,7 @@ def pump_output(process, on_complete=None):
 JOB_START_LOCK = threading.Lock()
 
 
-def start_job(command, kind, on_complete=None):
+def start_job(command, kind, on_complete=None, meta=None):
     # One lock around check + spawn, so two quick clicks cannot start two jobs.
     with JOB_START_LOCK:
         with JOB.lock:
@@ -1456,16 +991,11 @@ def start_job(command, kind, on_complete=None):
             JOB.kind = kind
             JOB.lines = ["> " + " ".join(command)]
             JOB.result = {}
+            JOB.progress = None
+            JOB.stage = None
+            JOB.meta = meta or {}
 
     threading.Thread(target=pump_output, args=(process, on_complete), daemon=True).start()
-
-
-def start_translation_job(payload):
-    start_job(build_command(payload), "translate")
-
-
-def start_dubbing_job(payload):
-    start_job(build_dubbing_command(payload), "dubbing")
 
 
 def start_music_mix_job(payload):
@@ -1492,18 +1022,6 @@ def start_script_voice_job(payload):
     start_job(build_script_voice_command(payload), "script_voice")
 
 
-def start_content_generate_job(payload):
-    start_job(build_content_generate_command(payload), "content_generate")
-
-
-def start_content_voice_prepare_job(payload):
-    start_job(build_content_voice_prepare_command(payload), "content_voice_prepare")
-
-
-def start_content_voice_job(payload):
-    start_job(build_content_voice_command(payload), "content_voice")
-
-
 def start_clean_wav_job(payload):
     command, output_path = build_clean_wav_command(payload)
 
@@ -1513,25 +1031,6 @@ def start_clean_wav_job(payload):
         return {"wav": str(output_path)}
 
     start_job(command, "wav_clean", on_complete=on_complete)
-
-
-def start_youtube_download_job(payload):
-    command, output_dir = build_youtube_download_command(payload)
-    before = {str(path.resolve()) for path in output_dir.glob("*") if path.is_file()}
-
-    def on_complete():
-        downloads = [
-            str(path.resolve())
-            for path in sorted(output_dir.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True)
-            if path.is_file() and str(path.resolve()) not in before
-        ]
-        return {"downloads": downloads}
-
-    start_job(command, "youtube_download", on_complete=on_complete)
-
-
-def start_ytdlp_update_job():
-    start_job(build_ytdlp_update_command(), "yt_dlp_update")
 
 
 def start_reference_transcribe_job(payload):
@@ -1591,6 +1090,187 @@ def start_engine_test_job(payload):
     start_job(command, "engine_test", on_complete=on_complete)
 
 
+PROJECT_ROUTE = re.compile(r"^/api/projects/([^/]+)(?:/([a-z-]+))?$")
+MEDIA_UPLOAD_SUFFIXES = projects.VIDEO_SUFFIXES | projects.AUDIO_SUFFIXES
+
+
+def project_file_url(project_id, relative):
+    return f"/api/projects/{quote(project_id)}/file?path={quote(relative)}" if relative else ""
+
+
+def project_detail(directory):
+    data = projects.load_project(directory)
+    project_id = data["id"]
+    work = directory / "work"
+    files = {}
+    candidates = {
+        "source": (data.get("source") or {}).get("file", ""),
+        "vocals": "work/vocals.wav" if (work / "vocals.wav").is_file() else "",
+        "background": "work/background.wav" if (work / "background.wav").is_file() else "",
+        "sample": data["voice"].get("auto_file", ""),
+        "uploaded_sample": data["voice"].get("file", ""),
+        "music": data["mix"].get("music_file", ""),
+        "voice_track": data.get("voice_track", ""),
+        "mix_track": data.get("mix_track", ""),
+        "video": data.get("video", ""),
+        "subtitles": data.get("subtitles", ""),
+    }
+    for key, relative in candidates.items():
+        if relative and (directory / relative).is_file():
+            files[key] = {"path": relative, "url": project_file_url(project_id, relative), "name": Path(relative).name}
+
+    segments = []
+    plan = projects.plan_path(directory, data)
+    units_file = plan.with_name(plan.name.replace(".dub.jsonl", ".segments.json"))
+    if units_file.is_file():
+        units = json.loads(units_file.read_text(encoding="utf-8")).get("translation_units") or []
+        report = {}
+        if data.get("voice_track"):
+            report_file = directory / data["voice_track"]
+            report_file = report_file.with_name(report_file.stem + ".report.json")
+            if report_file.is_file():
+                report = {item["id"]: item for item in json.loads(report_file.read_text(encoding="utf-8")).get("segments") or []}
+        for unit in units:
+            item_report = report.get(f"unit_{int(unit['id']):04d}") or {}
+            segments.append({
+                "id": unit["id"],
+                "start": unit.get("start"),
+                "duration": unit.get("duration"),
+                "source": unit.get("source"),
+                "translation": unit.get("translation"),
+                "speedup": item_report.get("speedup"),
+                "clipped": item_report.get("clipped_seconds"),
+            })
+
+    settings = load_settings()
+    separator = next((item for item in tts_engines.list_engines(kind="separator")
+                      if item.get("id") == settings["separation"].get("engine")), None)
+    return {
+        **data,
+        "files": files,
+        "segments": segments,
+        "separator": {
+            "id": (separator or {}).get("id"),
+            "name": (separator or {}).get("name"),
+            "installed": bool((separator or {}).get("status", {}).get("installed")),
+        },
+        "running_job": JOB.snapshot()["meta"].get("project") == project_id and JOB.snapshot()["running"],
+    }
+
+
+def create_project_upload(handler):
+    holder = {}
+
+    def destination(name, fields):
+        if Path(name).suffix.lower() not in MEDIA_UPLOAD_SUFFIXES:
+            raise ValueError("Нужен видео- или аудиофайл (mp4, mov, mkv, webm, wav, mp3, ...).")
+        directory = projects.new_project(str(fields.get("name") or ""), name)
+        holder["dir"] = directory
+        return directory / "source" / safe_upload_name(name, "source")
+
+    try:
+        source_path, fields = receive_upload(handler, destination)
+        data = projects.attach_source(holder["dir"], source_path)
+        changes = {key: fields[key] for key in ("target", "source_language") if fields.get(key)}
+        if changes:
+            data = projects.update_project(holder["dir"], changes)
+        return data
+    except Exception:
+        if holder.get("dir"):
+            shutil.rmtree(holder["dir"], ignore_errors=True)
+        raise
+
+
+def project_upload(handler, directory, kind):
+    if kind not in ("voice", "music"):
+        raise ValueError("Unknown upload kind.")
+
+    def destination(name, fields):
+        if Path(name).suffix.lower() not in projects.AUDIO_SUFFIXES | projects.VIDEO_SUFFIXES:
+            raise ValueError("Нужен аудиофайл.")
+        folder = "voice" if kind == "voice" else "source"
+        return directory / folder / f"{kind}_{int(time.time())}{Path(safe_upload_name(name)).suffix}"
+
+    saved, _ = receive_upload(handler, destination)
+    relative = saved.relative_to(directory).as_posix()
+    if kind == "voice":
+        return projects.update_project(directory, {"voice": {"mode": "file", "file": relative, "ref_text": ""}})
+    return projects.update_project(directory, {"mix": {"music_file": relative}})
+
+
+def start_project_job(directory, stage_name):
+    if stage_name not in projects.PLAN:
+        raise ValueError(f"Unknown stage: {stage_name}")
+    project_id = directory.name
+
+    def on_complete():
+        return {"project": project_id, "stage": stage_name}
+
+    start_job(
+        [sys.executable or "python", str(ROOT / "project.py"), "run", str(directory), stage_name],
+        "project",
+        on_complete=on_complete,
+        meta={"project": project_id, "stage": stage_name},
+    )
+
+
+def open_folder(path):
+    if os.name == "nt":
+        os.startfile(str(path))  # noqa: S606 - local desktop action requested from the local UI
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
+def handle_project_get(handler, parsed):
+    match = PROJECT_ROUTE.match(parsed.path)
+    if not match:
+        return False
+    directory = projects.project_dir(unquote(match.group(1)))
+    action = match.group(2) or ""
+    if action == "":
+        json_response(handler, {"ok": True, "project": project_detail(directory)})
+        return True
+    if action == "file":
+        relative = unquote(parse_qs(parsed.query).get("path", [""])[0])
+        file_path = (directory / relative).resolve()
+        if directory.resolve() not in file_path.parents or not file_path.is_file():
+            handler.send_error(404)
+            return True
+        serve_output_file(handler, file_path)
+        return True
+    return False
+
+
+def handle_project_post(handler, parsed):
+    if parsed.path == "/api/projects":
+        data = create_project_upload(handler)
+        json_response(handler, {"ok": True, "project": project_detail(projects.project_dir(data["id"]))})
+        return True
+    match = PROJECT_ROUTE.match(parsed.path)
+    if not match:
+        return False
+    directory = projects.project_dir(unquote(match.group(1)))
+    action = match.group(2) or ""
+    if action == "update":
+        projects.update_project(directory, read_json(handler))
+    elif action == "upload":
+        project_upload(handler, directory, parse_qs(parsed.query).get("kind", [""])[0])
+    elif action == "run":
+        start_project_job(directory, str(read_json(handler).get("stage") or "all"))
+    elif action == "delete":
+        projects.delete_project(directory)
+        json_response(handler, {"ok": True, "projects": projects.list_projects()})
+        return True
+    elif action == "open":
+        open_folder(directory / "output")
+    else:
+        return False
+    json_response(handler, {"ok": True, "project": project_detail(directory), "job": JOB.snapshot()})
+    return True
+
+
 def llm_from_payload(payload):
     """Client for the settings form (may differ from saved settings while editing)."""
     llm = dict(load_settings()["llm"])
@@ -1616,11 +1296,18 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "job": JOB.snapshot(),
                     "outputs": list_outputs(),
-                    "youtube": list_youtube_downloads(),
                 },
             )
         if path == "/api/settings":
             return json_response(self, {"ok": True, **settings_payload()})
+        if path == "/api/projects":
+            return json_response(self, {"ok": True, "projects": projects.list_projects()})
+        if path.startswith("/api/projects/"):
+            try:
+                if handle_project_get(self, parsed):
+                    return
+            except projects.ProjectError as exc:
+                return json_response(self, {"ok": False, "error": str(exc)}, 404)
         if path == "/api/llm/models":
             query = parse_qs(parsed.query)
             payload = {key: values[0] for key, values in query.items() if values}
@@ -1649,14 +1336,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             serve_output_file(self, file_path)
             return
-        if path == "/api/youtube-file":
-            query = parse_qs(parsed.query)
-            file_path = youtube_file_from_query(query)
-            if not file_path:
-                self.send_error(404)
-                return
-            serve_output_file(self, file_path)
-            return
         if path == "/api/local-audio":
             query = parse_qs(parsed.query)
             file_path = audio_file_from_query(query)
@@ -1665,53 +1344,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             serve_output_file(self, file_path)
             return
-        if path == "/api/youtube-text":
-            query = parse_qs(parsed.query)
-            file_path = youtube_file_from_query(query)
-            if not file_path:
-                return json_response(self, {"error": "File not found."}, 404)
-            return json_response(
-                self,
-                {
-                    "name": file_path.name,
-                    "text": file_path.read_text(encoding="utf-8", errors="replace"),
-                },
-            )
-        if path == "/api/latest-dub-jsonl":
-            return json_response(self, {"ok": True, "path": latest_dub_jsonl()})
         if path == "/api/latest-audio":
             return json_response(self, {"ok": True, "path": latest_output_audio()})
-        if path == "/api/latest-youtube":
-            query = parse_qs(parsed.query)
-            media_kind = query.get("kind", [""])[0]
-            return json_response(self, {"ok": True, "path": latest_youtube_download(media_kind)})
         if path == "/api/latest-translations":
             return json_response(self, {"ok": True, "path": latest_translations_json()})
         if path == "/api/latest-script-jsonl":
             return json_response(self, {"ok": True, "path": latest_script_jsonl()})
-        if path == "/api/latest-content-script":
-            return json_response(self, {"ok": True, "path": latest_content_script_text()})
-        if path == "/api/latest-content-jsonl":
-            return json_response(self, {"ok": True, "path": latest_content_script_jsonl()})
-        if path == "/api/yt-dlp-status":
-            result = subprocess.run(
-                build_ytdlp_check_command(),
-                cwd=str(ROOT),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-            return json_response(
-                self,
-                {
-                    "ok": True,
-                    "available": result.returncode == 0,
-                    "message": (result.stdout or result.stderr).strip(),
-                },
-                200,
-            )
 
         if path == "/":
             path = "/index.html"
@@ -1737,14 +1375,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         try:
-            if parsed.path == "/api/run":
-                payload = read_json(self)
-                start_translation_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-dubbing":
-                payload = read_json(self)
-                start_dubbing_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
+            if parsed.path.startswith("/api/projects") and handle_project_post(self, parsed):
+                return
             if parsed.path == "/api/run-music-mix":
                 payload = read_json(self)
                 start_music_mix_job(payload)
@@ -1769,32 +1401,10 @@ class Handler(BaseHTTPRequestHandler):
                 payload = read_json(self)
                 start_script_voice_job(payload)
                 return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-content-generate":
-                payload = read_json(self)
-                start_content_generate_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-content-voice-prepare":
-                payload = read_json(self)
-                start_content_voice_prepare_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-content-voice":
-                payload = read_json(self)
-                start_content_voice_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
             if parsed.path == "/api/run-clean-wav":
                 payload = read_json(self)
                 start_clean_wav_job(payload)
                 return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-youtube-download":
-                payload = read_json(self)
-                start_youtube_download_job(payload)
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/run-ytdlp-update":
-                start_ytdlp_update_job()
-                return json_response(self, {"ok": True, "job": JOB.snapshot()})
-            if parsed.path == "/api/youtube-subtitles":
-                payload = read_json(self)
-                return json_response(self, {"ok": True, **detect_youtube_subtitles(payload)})
             if parsed.path == "/api/stop":
                 with JOB.lock:
                     process = JOB.process
@@ -1854,10 +1464,6 @@ class Handler(BaseHTTPRequestHandler):
                 with tts_engines.EngineSession(engine_id, log=lambda message: None, startup_timeout=120) as session:
                     voices = session.voices(settings)
                 return json_response(self, {"ok": True, "voices": voices})
-            if parsed.path == "/api/select-file":
-                payload = read_json(self)
-                path = choose_file(str(payload.get("kind") or "audio"))
-                return json_response(self, {"ok": True, "path": path})
             if parsed.path == "/api/upload-file":
                 result = upload_file(self)
                 return json_response(self, {"ok": True, **result})

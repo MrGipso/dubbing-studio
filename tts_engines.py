@@ -28,7 +28,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ENGINES_DIR = ROOT / "engines"
 WORKER = ENGINES_DIR / "worker.py"
-SETTINGS_FILE = ROOT / "config" / "settings.local.json"
 SECRETS_FILE = ROOT / "config" / "secrets.local.json"
 TTS_API_KEY_ENV = "DUB_TTS_API_KEY"
 
@@ -54,12 +53,19 @@ def load_manifest(engine_id):
     manifest["id"] = directory.name
     manifest.setdefault("name", directory.name)
     manifest.setdefault("runtime", "venv")
+    manifest.setdefault("kind", "tts")
     manifest.setdefault("supports", {})
     manifest.setdefault("settings", [])
     return manifest
 
 
-def list_engines(include_template=False):
+def section_for(manifest):
+    """Settings section of an engine: "tts" for voices, "separation" for vocal separators."""
+    return "separation" if manifest.get("kind") == "separator" else "tts"
+
+
+def list_engines(include_template=False, kind="tts"):
+    """Engines of one kind ("tts" or "separator"); kind=None lists all."""
     engines = []
     for directory in sorted(ENGINES_DIR.iterdir()):
         if not directory.is_dir() or directory.name.startswith("."):
@@ -72,6 +78,8 @@ def list_engines(include_template=False):
             manifest = load_manifest(directory.name)
         except (OSError, json.JSONDecodeError, EngineError) as exc:
             engines.append({"id": directory.name, "name": directory.name, "error": str(exc)})
+            continue
+        if kind and manifest.get("kind", "tts") != kind:
             continue
         manifest["status"] = engine_status(manifest)
         engines.append(manifest)
@@ -160,12 +168,9 @@ def install_command(engine_id):
 
 
 def load_app_settings():
-    if not SETTINGS_FILE.is_file():
-        return {}
-    try:
-        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    from app_settings import load_settings
+
+    return load_settings()
 
 
 def default_settings(manifest):
@@ -175,7 +180,7 @@ def default_settings(manifest):
 def resolve_settings(manifest, *overrides):
     """Manifest defaults <- saved UI settings <- explicit overrides."""
     settings = default_settings(manifest)
-    saved = ((load_app_settings().get("tts") or {}).get("engines") or {}).get(manifest["id"]) or {}
+    saved = ((load_app_settings().get(section_for(manifest)) or {}).get("engines") or {}).get(manifest["id"]) or {}
     for layer in (saved, *overrides):
         settings.update({key: value for key, value in (layer or {}).items() if value is not None})
     return settings
@@ -256,6 +261,9 @@ class EngineSession:
         last = ""
         for line in self.process.stderr:
             line = line.rstrip()
+            if line.startswith("PROGRESS "):
+                self.log(line)  # forwarded as-is so the UI shows a progress bar
+                continue
             # Skip progress-bar redraws that repeat the same prefix.
             if not line or (last and line[:20] == last[:20] and "%|" in line):
                 last = line or last
@@ -323,6 +331,10 @@ class EngineSession:
             hints=hints or {},
         )
 
+    def separate(self, input_path, out_dir, timeout=7200):
+        """Separator engines: split a mix into vocals.wav + background.wav."""
+        return self.request("separate", timeout=timeout, input=str(Path(input_path).resolve()), out_dir=str(Path(out_dir).resolve()))
+
     def voices(self, settings=None):
         return self.request("voices", timeout=120, settings=settings or {}).get("voices") or []
 
@@ -336,6 +348,12 @@ class EngineSession:
                 self.process.wait(timeout=20)
             except (OSError, subprocess.TimeoutExpired):
                 self.process.kill()
+                self.process.wait(timeout=10)
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
         self.process = None
 
 
@@ -357,7 +375,7 @@ def main():
             stream.reconfigure(encoding="utf-8", errors="replace")
 
     if not args.engine:
-        for manifest in list_engines():
+        for manifest in list_engines(kind=None):
             status = manifest.get("status") or {}
             mark = "+" if status.get("installed") else "-"
             print(f"{mark} {manifest['id']:<16} {manifest.get('name', '')}  [{status.get('message', manifest.get('error', ''))}]")

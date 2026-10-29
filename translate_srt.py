@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from llm_client import LLMError, add_llm_arguments, client_from_args, configure_stdio
+from languages import language_id_for
 
 
 # Structured-output schema: servers that support it constrain decoding to valid
@@ -186,18 +187,7 @@ def write_srt(path, segments):
 
 
 def slugify(value):
-    value = value.strip().lower()
-    common = {
-        "english": "en",
-        "russian": "ru",
-        "ukrainian": "uk",
-        "spanish": "es",
-        "german": "de",
-        "french": "fr",
-        "polish": "pl",
-        "italian": "it",
-    }
-    value = common.get(value, value)
+    value = language_id_for(value) or value.strip().lower()
     value = re.sub(r"[^a-z0-9_-]+", "-", value)
     return value.strip("-") or "translated"
 
@@ -351,6 +341,8 @@ def translate_pending(llm, translation_units, args, save):
         for unit in translation_units:
             if unit["id"] in translations:
                 unit["translation"] = translations[unit["id"]]
+        done = sum(1 for unit in translation_units if unit.get("translation"))
+        print(f"PROGRESS {done}/{len(translation_units)} Перевод фраз", flush=True)
 
         # Save progress after every batch for resumability. Incomplete media-facing
         # artifacts use a .partial marker so the next dubbing stage does not pick

@@ -14,6 +14,8 @@ and talks to it with one JSON object per line:
         "out": "C:/.../seg_0001.wav"}
     <- {"id": 2, "ok": true, "result": {"path": "...", "sample_rate": 24000, "seconds": 3.1}}
     -> {"id": 3, "cmd": "voices"}            (optional, engines with a voice list)
+    -> {"id": 3, "cmd": "separate", "input": "mix.wav", "out_dir": "..."}
+    <- {"id": 3, "ok": true, "result": {"vocals": ".../vocals.wav", "background": ".../background.wav"}}
     -> {"id": 4, "cmd": "shutdown"}
 
 Only this file and the engine's adapter.py run in the engine environment, so
@@ -47,9 +49,10 @@ def load_adapter(engine_dir):
     module = importlib.util.module_from_spec(spec)
     sys.path.insert(0, str(engine_dir))
     spec.loader.exec_module(module)
-    for name in ("load", "synthesize"):
-        if not callable(getattr(module, name, None)):
-            raise RuntimeError(f"{adapter_path} must define a function '{name}'.")
+    if not callable(getattr(module, "load", None)):
+        raise RuntimeError(f"{adapter_path} must define a function 'load'.")
+    if not callable(getattr(module, "synthesize", None)) and not callable(getattr(module, "separate", None)):
+        raise RuntimeError(f"{adapter_path} must define 'synthesize' (TTS) or 'separate' (separator).")
     return module
 
 
@@ -107,6 +110,11 @@ def handle(adapter, state, message):
             audio, sample_rate = result, state.get("sample_rate", 24000)
         seconds = write_wav(message["out"], to_mono_float(audio), sample_rate)
         return {"path": message["out"], "sample_rate": int(sample_rate), "seconds": round(seconds, 3)}
+    if cmd == "separate":
+        separate = getattr(adapter, "separate", None)
+        if not callable(separate):
+            raise ValueError("This engine cannot separate audio.")
+        return separate(message["input"], message["out_dir"]) or {}
     if cmd == "voices":
         list_voices = getattr(adapter, "list_voices", None)
         return {"voices": list_voices(message.get("settings") or {}) if callable(list_voices) else []}

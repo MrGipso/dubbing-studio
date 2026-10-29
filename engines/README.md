@@ -9,6 +9,7 @@
 | `chatterbox` | Chatterbox Multilingual, 23 языка | да | подгонка ядром | **MIT** (можно в коммерции) |
 | `openai_speech` | любой сервер `/v1/audio/speech` | нет, голоса сервера | подгонка ядром | зависит от сервера |
 | `_template` | шаблон для своего движка | — | — | — |
+| `demucs` | Demucs: отделение голоса от фона | — | — | **MIT** |
 
 ## Как это устроено
 
@@ -59,6 +60,21 @@ torch/transformers, и в одном окружении они не уживаю
 python tts_engines.py
 python tts_engines.py --engine my_tts --language en --text "Hello there"
 ```
+
+## Движок отделения голоса от фона
+
+Устроен так же, но в `engine.json` указано `"kind": "separator"`, а вместо
+`synthesize()` реализована функция `separate()`:
+
+```python
+def separate(input_path, out_dir):
+    ...  # разделить микс
+    return {"vocals": ".../vocals.wav", "background": ".../background.wav"}
+```
+
+Такие движки показываются в настройках в разделе «Отделение голоса от фона».
+Пример — папка `demucs`. Прогресс можно печатать строками
+`PROGRESS 40/100 Текст`: интерфейс покажет его в строке прогресса.
 
 ## Если движок — это сервер
 

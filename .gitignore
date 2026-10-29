@@ -7,8 +7,9 @@ __pycache__/
 engines/*/.venv/
 engines/*/engine.local.json
 
-# User data
+# User data (projects, uploads, results)
 inputs/
+projects/
 outputs/
 
 # Local settings and secrets (API keys)

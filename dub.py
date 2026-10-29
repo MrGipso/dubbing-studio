@@ -258,6 +258,7 @@ class Synthesizer:
         self.work_dir = work_dir
         self.sample_rate = session.sample_rate or 24000
         self.counter = 0
+        self.last_fit = {}
 
     def voice_for(self, item):
         voice = {}
@@ -295,6 +296,8 @@ class Synthesizer:
     def fit(self, item, text, duration, target_samples, max_samples):
         args = self.args
         audio = self.synthesize(item, text, duration, args.speed)
+        natural_seconds = len(audio) / self.sample_rate
+        self.last_fit = {"natural_seconds": round(natural_seconds, 3), "speedup": 1.0, "clipped_seconds": 0.0}
         if args.auto_fit and max_samples > 0 and len(audio) > max_samples:
             # Total speed-up (engine speed x time-stretch) never exceeds max_auto_speed.
             budget = args.max_auto_speed / max(args.speed, 0.01)
@@ -312,8 +315,11 @@ class Synthesizer:
                       f"(raw {len(audio) / self.sample_rate:.2f}s, slot {max_samples / self.sample_rate:.2f}s)", flush=True)
                 audio = time_stretch(audio, self.sample_rate, factor)
         raw_len = len(audio)
+        if raw_len:
+            self.last_fit["speedup"] = round(max(1.0, natural_seconds * self.sample_rate / raw_len), 3)
         audio = fit_to_duration(audio, self.sample_rate, target_samples, max_samples)
         clipped = max(0, raw_len - len(audio)) / self.sample_rate
+        self.last_fit["clipped_seconds"] = round(clipped, 3)
         if clipped > 0.05:
             print(f"  WARNING: phrase is {clipped:.2f}s too long for its slot and was cut. "
                   f"Shorten the translation or raise Tail room / Max auto speed.", flush=True)
@@ -390,6 +396,7 @@ def main():
 
         cursor = 0
         prev_source_end = None
+        report = []
         for index, item in enumerate(items, start=1):
             seg_id = str(item.get("id") or f"seg_{index:04d}")
             text = str(item["text"]).strip()
@@ -408,6 +415,7 @@ def main():
                 print(f"[{index}/{len(items)}] {seg_id}: natural (pause {gap:.2f}s) {text[:80]}", flush=True)
                 audio = synth.synthesize(item, text, None, args.speed)
                 start = cursor / sample_rate + gap
+                synth.last_fit = {"natural_seconds": round(len(audio) / sample_rate, 3), "speedup": 1.0, "clipped_seconds": 0.0}
             else:
                 print(f"[{index}/{len(items)}] {seg_id}: {duration:.2f}s {text[:80]}", flush=True)
                 target_samples = int(round(duration * sample_rate))
@@ -421,6 +429,15 @@ def main():
                 track = np.pad(track, (0, start_sample + len(audio) - len(track)))
             mix_segment(track, audio, start_sample)
             cursor = max(cursor, start_sample + len(audio))
+            report.append({
+                "id": seg_id,
+                "text": text,
+                "start": round(start, 3),
+                "slot_seconds": round(duration, 3),
+                "seconds": round(len(audio) / sample_rate, 3),
+                **synth.last_fit,
+            })
+            print(f"PROGRESS {index}/{len(items)} Озвучка фраз", flush=True)
 
     peak = float(np.max(np.abs(track))) if len(track) else 0.0
     if args.post_normalize and peak > 1e-6:
@@ -428,7 +445,11 @@ def main():
     elif peak > 0.98:
         track = track / peak * 0.98
     sf.write(str(out_path), track, sample_rate)
+    # Per-phrase fit report: the UI uses it to mark phrases that were sped up or cut.
+    report_path = out_path.with_name(out_path.stem + ".report.json")
+    report_path.write_text(json.dumps({"engine": engine_id, "segments": report}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wav={out_path.resolve()}", flush=True)
+    print(f"report={report_path.resolve()}", flush=True)
     print(f"segments_dir={segments_dir.resolve()}", flush=True)
 
     if not args.keep_segments:

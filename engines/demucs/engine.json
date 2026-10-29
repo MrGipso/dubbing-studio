@@ -1,0 +1,30 @@
+{
+  "kind": "separator",
+  "name": "Demucs",
+  "description": "Отделяет голос от музыки и шумов. Голос идёт на распознавание и образец, а фон оригинала остаётся в готовом ролике.",
+  "homepage": "https://github.com/adefossez/demucs",
+  "license": "MIT (код и модели)",
+  "commercial_use": true,
+  "runtime": "venv",
+  "install_note": "3–5 ГБ (PyTorch CUDA) и около 80 МБ модели при первом запуске. На видеокарте минута видео обрабатывается за несколько секунд.",
+  "settings": [
+    {
+      "key": "model",
+      "label": "Модель",
+      "type": "select",
+      "default": "htdemucs",
+      "options": ["htdemucs", "htdemucs_ft", "mdx_extra"],
+      "help": "htdemucs — быстро и хорошо; htdemucs_ft — чище, но в 4 раза медленнее."
+    },
+    {
+      "key": "shifts",
+      "label": "Дополнительные проходы",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 5,
+      "advanced": true,
+      "help": "Каждый проход немного улучшает качество и замедляет обработку."
+    }
+  ]
+}
