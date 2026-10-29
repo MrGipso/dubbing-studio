@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--compute-type', default='float16')
     parser.add_argument('--output-dir', default='outputs')
     parser.add_argument('--output-prefix', default='', help='Output filename prefix. Defaults to input audio stem.')
+    parser.add_argument('--word-timestamps', action='store_true', help='Save word timings (used to split phrases between speakers).')
     args = parser.parse_args()
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -45,6 +46,7 @@ def main():
         language=language,
         vad_filter=True,
         beam_size=5,
+        word_timestamps=args.word_timestamps,
     )
 
     stem = args.output_prefix.strip() or audio_path.stem
@@ -64,13 +66,19 @@ def main():
         srt_blocks.append(
             f"{len(srt_blocks) + 1}\n{format_srt_time(seg.start)} --> {format_srt_time(seg.end)}\n{text}\n"
         )
-        records.append({
+        record = {
             "start": round(seg.start, 3),
             "end": round(seg.end, 3),
             "text": text,
             "avg_logprob": round(seg.avg_logprob, 4),
             "no_speech_prob": round(seg.no_speech_prob, 4),
-        })
+        }
+        if seg.words:
+            record["words"] = [
+                {"start": round(word.start, 3), "end": round(word.end, 3), "word": word.word}
+                for word in seg.words
+            ]
+        records.append(record)
         print(f"[{seg.start:7.2f} - {seg.end:7.2f}] {text}", flush=True)
         print(f"PROGRESS {min(total, int(seg.end))}/{total} Распознавание речи", flush=True)
 

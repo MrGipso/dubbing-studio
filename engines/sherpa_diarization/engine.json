@@ -1,0 +1,43 @@
+{
+  "kind": "diarizer",
+  "name": "Sherpa-ONNX",
+  "description": "Определяет, кто и когда говорит, чтобы озвучить каждого своим голосом. Работает на процессоре, токены и ключи не нужны.",
+  "homepage": "https://github.com/k2-fsa/sherpa-onnx",
+  "license": "Apache-2.0 (sherpa-onnx, 3D-Speaker), MIT (сегментация pyannote)",
+  "commercial_use": true,
+  "runtime": "venv",
+  "cpu_only": true,
+  "install_note": "Около 60 МБ библиотеки и 35 МБ моделей при первом запуске. Минута записи обрабатывается за несколько секунд.",
+  "settings": [
+    {
+      "key": "embedding_model",
+      "label": "Модель голосовых отпечатков",
+      "type": "select",
+      "default": "3dspeaker_campplus_zh_en",
+      "options": ["3dspeaker_campplus_zh_en", "3dspeaker_eres2net_base"],
+      "help": "Отличает голоса друг от друга. Если два человека слились в одного, попробуйте другую модель."
+    },
+    {
+      "key": "threshold",
+      "label": "Порог сходства голосов",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.3,
+      "max": 0.9,
+      "step": 0.05,
+      "advanced": true,
+      "help": "Когда число говорящих определяется автоматически: выше — больше разных голосов, ниже — меньше."
+    },
+    {
+      "key": "min_turn",
+      "label": "Минимальная реплика, с",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.1,
+      "max": 2,
+      "step": 0.05,
+      "advanced": true,
+      "help": "Более короткие кусочки речи не считаются отдельной репликой."
+    }
+  ]
+}

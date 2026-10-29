@@ -1,0 +1,14 @@
+# Environment for the Sherpa-ONNX speaker diarization engine. Created by "Install engine" (uv sync).
+# CPU only, no PyTorch: the ONNX models are small and fast enough on any processor.
+[project]
+name = "dubbing-engine-sherpa-diarization"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "sherpa-onnx>=1.10.30",
+    "soundfile",
+    "numpy",
+]
+
+[tool.uv]
+package = false

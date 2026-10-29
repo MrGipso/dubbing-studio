@@ -16,6 +16,8 @@ and talks to it with one JSON object per line:
     -> {"id": 3, "cmd": "voices"}            (optional, engines with a voice list)
     -> {"id": 3, "cmd": "separate", "input": "mix.wav", "out_dir": "..."}
     <- {"id": 3, "ok": true, "result": {"vocals": ".../vocals.wav", "background": ".../background.wav"}}
+    -> {"id": 3, "cmd": "diarize", "input": "speech_16k.wav", "num_speakers": null}
+    <- {"id": 3, "ok": true, "result": {"turns": [{"start": 0.0, "end": 2.5, "speaker": 0}, ...]}}
     -> {"id": 4, "cmd": "shutdown"}
 
 Only this file and the engine's adapter.py run in the engine environment, so
@@ -51,8 +53,8 @@ def load_adapter(engine_dir):
     spec.loader.exec_module(module)
     if not callable(getattr(module, "load", None)):
         raise RuntimeError(f"{adapter_path} must define a function 'load'.")
-    if not callable(getattr(module, "synthesize", None)) and not callable(getattr(module, "separate", None)):
-        raise RuntimeError(f"{adapter_path} must define 'synthesize' (TTS) or 'separate' (separator).")
+    if not any(callable(getattr(module, name, None)) for name in ("synthesize", "separate", "diarize")):
+        raise RuntimeError(f"{adapter_path} must define 'synthesize' (TTS), 'separate' (separator) or 'diarize' (diarizer).")
     return module
 
 
@@ -115,6 +117,11 @@ def handle(adapter, state, message):
         if not callable(separate):
             raise ValueError("This engine cannot separate audio.")
         return separate(message["input"], message["out_dir"]) or {}
+    if cmd == "diarize":
+        diarize = getattr(adapter, "diarize", None)
+        if not callable(diarize):
+            raise ValueError("This engine cannot tell speakers apart.")
+        return diarize(message["input"], message.get("num_speakers")) or {}
     if cmd == "voices":
         list_voices = getattr(adapter, "list_voices", None)
         return {"voices": list_voices(message.get("settings") or {}) if callable(list_voices) else []}

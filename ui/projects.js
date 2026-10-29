@@ -21,13 +21,11 @@ const pv = {
   prepareBtn: document.getElementById("prepareBtn"),
   separate: document.getElementById("projectSeparate"),
   separatorHint: document.getElementById("separatorHint"),
+  speakers: document.getElementById("projectSpeakers"),
+  diarizerHint: document.getElementById("diarizerHint"),
   prepareSummary: document.getElementById("prepareSummary"),
-  voiceOriginalInfo: document.getElementById("voiceOriginalInfo"),
-  voiceFileBtn: document.getElementById("voiceFileBtn"),
+  speakerVoices: document.getElementById("speakerVoices"),
   voiceFileInput: document.getElementById("voiceFileInput"),
-  voiceFileInfo: document.getElementById("voiceFileInfo"),
-  voiceRefText: document.getElementById("voiceRefText"),
-  voiceEngineId: document.getElementById("voiceEngineId"),
   timingSpeed: document.getElementById("timingSpeed"),
   timingTail: document.getElementById("timingTail"),
   timingMaxSpeed: document.getElementById("timingMaxSpeed"),
@@ -85,7 +83,7 @@ function renderProjectCards(projects) {
     card.innerHTML = `
       <button type="button" class="project-open">
         <strong translate="no">${escapeHtml(project.name || project.id)}</strong>
-        <span class="meta"><span translate="no">${escapeHtml(project.source_name || "")}</span> · ${formatClock(project.duration)} · → ${escapeHtml((project.targets || []).map(languageLabel).join(", "))}</span>
+        <span class="meta"><span translate="no">${escapeHtml(project.source_name || "")}</span> · ${formatClock(project.duration)} · → ${escapeHtml((project.targets || []).map(languageLabel).join(", "))}${project.speakers > 1 ? ` · ${t("Говорящих: {count}", { count: project.speakers })}` : ""}</span>
         <span class="chip-row">${chips}${project.error ? `<span class="chip chip-bad">${t("ошибка")}</span>` : ""}</span>
         <span class="meta">${project.updated ? new Date(project.updated * 1000).toLocaleString() : ""}</span>
       </button>
@@ -237,41 +235,32 @@ function renderProject(firstOpen = false) {
   pv.separatorHint.innerHTML = separator.installed ? "" :
     `${escapeHtml(t("Движок отделения фона ({name}) не установлен — без него фон оригинала в ролик не попадёт.", { name: separator.name || "Demucs" }))}
      <button type="button" class="text-btn" data-open-engines>${t("Установить в настройках")}</button>`;
+  setIfIdle(pv.speakers, String(p.speaker_count ?? 1));
+  const diarizer = p.diarizer || {};
+  pv.diarizerHint.hidden = Number(p.speaker_count ?? 1) === 1 || diarizer.installed;
+  pv.diarizerHint.innerHTML = diarizer.installed ? "" :
+    `${escapeHtml(t("Движок разделения на говорящих ({name}) не установлен — все фразы озвучатся одним голосом.", { name: diarizer.name || "Sherpa-ONNX" }))}
+     <button type="button" class="text-btn" data-open-engines>${t("Установить в настройках")}</button>`;
   const segmentsCount = (p.segments || []).length;
   const untranslated = (p.languages || []).filter((language) => !language.translated);
   if (p.transcribed && untranslated.length) {
+    const languages = untranslated.map((language) => languageLabel(language.name)).join(", ");
     pv.prepareBtn.dataset.runStage = "translate";
-    pv.prepareBtn.textContent = t("▶ Перевести: {languages}", { languages: untranslated.map((language) => languageLabel(language.name)).join(", ") });
+    pv.prepareBtn.textContent = p.diarized ? t("▶ Перевести: {languages}", { languages })
+      : t("▶ Найти говорящих и перевести: {languages}", { languages });
   } else {
     pv.prepareBtn.dataset.runStage = "prepare";
     pv.prepareBtn.textContent = p.transcribed ? t("▶ Распознать и перевести заново") : t("▶ Распознать и перевести");
   }
   const detected = { language: p.detected_language || "?", count: segmentsCount };
+  const speakersCount = (p.speaker_list || []).length;
   pv.prepareSummary.textContent = !p.transcribed ? ""
-    : p.separated ? t("Распознано: язык оригинала {language}, голос отделён от фона. Фраз: {count}.", detected)
-      : t("Распознано: язык оригинала {language}. Фраз: {count}.", detected);
+    : (p.separated ? t("Распознано: язык оригинала {language}, голос отделён от фона. Фраз: {count}.", detected)
+      : t("Распознано: язык оригинала {language}. Фраз: {count}.", detected))
+      + (p.diarized && speakersCount > 1 ? ` ${t("Говорящих: {count}", { count: speakersCount })}.` : "");
 
   // Step 2: voice
-  const voice = p.voice || {};
-  for (const radio of document.querySelectorAll('input[name="voiceMode"]')) radio.checked = radio.value === (voice.mode || "original");
-  const candidates = voice.candidates || [];
-  const sampleIndex = Number(voice.auto_index || 0);
-  const sampleKey = `${files.sample?.url}|${sampleIndex}|${p.updated}`;
-  if (pv.voiceOriginalInfo.dataset.key !== sampleKey) {
-    pv.voiceOriginalInfo.dataset.key = sampleKey;
-    pv.voiceOriginalInfo.innerHTML = files.sample
-      ? `${mediaElement(files.sample, "audio")}
-         <div class="meta" translate="no">${escapeHtml(voice.auto_text || "")}</div>
-         ${candidates.length > 1 ? `<div class="sample-switch">
-           <button type="button" class="text-btn" data-sample-step="-1" data-job-button>◀</button>
-           <span class="meta">${t("Отрывок {index} из {count}", { index: sampleIndex + 1, count: candidates.length })} · ${formatClock(candidates[sampleIndex]?.start)}–${formatClock(candidates[sampleIndex]?.end)}</span>
-           <button type="button" class="text-btn" data-sample-step="1" data-job-button>▶</button>
-         </div>` : ""}`
-      : `<div class="meta">${t("Появится после шага 1.")}</div>`;
-  }
-  pv.voiceFileInfo.innerHTML = files.uploaded_sample ? mediaElement(files.uploaded_sample, "audio") : "";
-  setIfIdle(pv.voiceRefText, voice.ref_text || "");
-  setIfIdle(pv.voiceEngineId, voice.voice_id || "");
+  renderSpeakers(p);
   const timing = p.timing || {};
   setIfIdle(pv.timingSpeed, timing.speed ?? 1);
   setIfIdle(pv.timingTail, timing.tail_room ?? 0.6);
@@ -336,7 +325,9 @@ function renderSegments(segments, voiced) {
   revoiceBtn.dataset.count = String(dirtyCount);
 
   // Never rebuild the table under the user's cursor.
-  const signature = JSON.stringify([voiced, segments.map((s) => [s.id, s.translation, s.dirty, s.speedup, s.clipped, s.voice_url])]);
+  const speakers = currentProject?.speaker_list || [];
+  const signature = JSON.stringify([voiced, speakers.map((speaker) => [speaker.id, speaker.name]),
+    segments.map((s) => [s.id, s.translation, s.dirty, s.speedup, s.clipped, s.voice_url, s.speaker])]);
   if (signature === segmentsSignature) return;
   if (pv.segments.contains(document.activeElement) && document.activeElement.tagName === "TEXTAREA") {
     segmentsPendingRender = true;
@@ -354,8 +345,10 @@ function renderSegments(segments, voiced) {
     const row = document.createElement("div");
     row.className = `segment-row${segment.dirty ? " segment-dirty" : ""}`;
     row.dataset.id = segment.id;
+    if (speakers.length > 1) row.dataset.speakerIndex = String(Math.max(0, speakers.findIndex((item) => item.id === segment.speaker)) % 6);
     row.innerHTML = `
-      <span class="meta">${formatClock(segment.start)} · ${t("{seconds} с", { seconds: Number(segment.duration || 0).toFixed(1) })}</span>
+      <span class="meta">${formatClock(segment.start)} · ${t("{seconds} с", { seconds: Number(segment.duration || 0).toFixed(1) })}
+        ${speakers.length > 1 ? speakerSelect(segment.speaker, speakers) : ""}</span>
       <span class="segment-source"><span translate="no">${escapeHtml(segment.source)}</span>
         <button type="button" class="text-btn" data-play="source">${t("▶ оригинал")}</button></span>
       <textarea class="segment-text" rows="2" spellcheck="true">${escapeHtml(segment.translation)}</textarea>
@@ -533,15 +526,151 @@ pv.targets.addEventListener("click", (event) => {
   queueProjectChange({ targets: (currentProject.targets || []).filter((item) => item !== name) }, true);
 });
 
-pv.voiceOriginalInfo.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-sample-step]");
-  if (!button || !currentProject) return;
+// ---------------------------------------------------------------- speakers and their voices
+
+function speakerLabel(speaker, index) {
+  return speaker.name || t("Говорящий {number}", { number: index + 1 });
+}
+
+function speakerSelect(current, speakers) {
+  const options = speakers.map((speaker, index) =>
+    `<option value="${escapeHtml(speaker.id)}" ${speaker.id === current ? "selected" : ""}>${escapeHtml(speakerLabel(speaker, index))}</option>`).join("");
+  return `<select class="speaker-select" data-speaker-select translate="no" title="${t("Кто говорит эту фразу")}">${options}</select>`;
+}
+
+function speakerCard(speaker, index, many) {
+  const id = escapeHtml(speaker.id);
+  return `
+    <div class="speaker-card" data-speaker="${id}" data-speaker-index="${index % 6}">
+      ${many ? `<div class="speaker-head">
+        <span class="speaker-dot"></span>
+        <input class="speaker-name" data-speaker-name maxlength="60" placeholder="${escapeHtml(t("Говорящий {number}", { number: index + 1 }))}">
+        <span class="meta" data-speaker-stats></span>
+      </div>` : ""}
+      <div class="voice-modes">
+        <label class="voice-mode">
+          <input type="radio" name="voiceMode-${id}" value="original">
+          <strong>${t("Голос оригинала")}</strong>
+          <span>${t("Образец вырезается из ролика сам после шага 1.")}</span>
+          <div class="voice-mode-body" data-sample-box></div>
+        </label>
+        <label class="voice-mode">
+          <input type="radio" name="voiceMode-${id}" value="file">
+          <strong>${t("Свой образец")}</strong>
+          <span>${t("10–30 секунд чистой речи нужного голоса.")}</span>
+          <div class="voice-mode-body">
+            <div class="input-action"><button type="button" class="secondary" data-voice-upload>${t("Загрузить образец")}</button></div>
+            <div data-uploaded-box></div>
+            <textarea rows="2" data-ref-text placeholder="${escapeHtml(t("Что сказано в образце. Пусто — распознается само."))}"></textarea>
+          </div>
+        </label>
+        <label class="voice-mode">
+          <input type="radio" name="voiceMode-${id}" value="engine">
+          <strong>${t("Голос движка")}</strong>
+          <span>${t("Готовый голос выбранного движка, без клонирования.")}</span>
+          <div class="voice-mode-body"><input data-voice-id placeholder="${escapeHtml(t("Имя голоса (пусто — по умолчанию)"))}"></div>
+        </label>
+      </div>
+    </div>`;
+}
+
+function sampleBox(speaker) {
+  const voice = speaker.voice || {};
+  if (!speaker.sample) return `<div class="meta">${t("Появится после шага 1.")}</div>`;
+  const candidates = voice.candidates || [];
+  const index = Number(voice.auto_index || 0);
+  const candidate = candidates[index] || {};
+  const where = candidate.parts ? t("склеено из коротких фраз") : `${formatClock(candidate.start)}–${formatClock(candidate.end)}`;
+  return `${mediaElement(speaker.sample, "audio")}
+    <div class="meta" translate="no">${escapeHtml(voice.auto_text || "")}</div>
+    ${candidates.length > 1 ? `<div class="sample-switch">
+      <button type="button" class="text-btn" data-sample-step="-1" data-job-button>◀</button>
+      <span class="meta">${t("Отрывок {index} из {count}", { index: index + 1, count: candidates.length })} · ${where}</span>
+      <button type="button" class="text-btn" data-sample-step="1" data-job-button>▶</button>
+    </div>` : ""}`;
+}
+
+function renderSpeakers(p) {
+  const speakers = p.speaker_list || [];
+  const layout = JSON.stringify(speakers.map((speaker) => speaker.id));
+  if (pv.speakerVoices.dataset.layout !== layout) {
+    pv.speakerVoices.dataset.layout = layout;
+    pv.speakerVoices.innerHTML = speakers.map((speaker, index) => speakerCard(speaker, index, speakers.length > 1)).join("");
+  }
+  for (const speaker of speakers) {
+    const card = pv.speakerVoices.querySelector(`[data-speaker="${CSS.escape(speaker.id)}"]`);
+    if (!card) continue;
+    const voice = speaker.voice || {};
+    for (const radio of card.querySelectorAll('input[type="radio"]')) radio.checked = radio.value === (voice.mode || "original");
+    const name = card.querySelector("[data-speaker-name]");
+    if (name) setIfIdle(name, speaker.name || "");
+    const stats = card.querySelector("[data-speaker-stats]");
+    if (stats) stats.textContent = speaker.phrases ? t("Фраз: {count} · речь {time}", { count: speaker.phrases, time: formatClock(speaker.seconds) }) : "";
+    const box = card.querySelector("[data-sample-box]");
+    const key = `${speaker.sample?.url}|${voice.auto_index}|${p.updated}`;
+    if (box.dataset.key !== key) {
+      box.dataset.key = key;
+      box.innerHTML = sampleBox(speaker);
+    }
+    const uploaded = card.querySelector("[data-uploaded-box]");
+    const uploadedKey = speaker.uploaded?.url || "";
+    if (uploaded.dataset.key !== uploadedKey) {
+      uploaded.dataset.key = uploadedKey;
+      uploaded.innerHTML = speaker.uploaded ? mediaElement(speaker.uploaded, "audio") : "";
+    }
+    setIfIdle(card.querySelector("[data-ref-text]"), voice.ref_text || "");
+    setIfIdle(card.querySelector("[data-voice-id]"), voice.voice_id || "");
+  }
+  if (lastState?.job) renderJob(lastState.job);  // disabled state of the new sample buttons
+}
+
+function speakerOf(element) {
+  return element.closest("[data-speaker]")?.dataset.speaker;
+}
+
+pv.speakerVoices.addEventListener("change", (event) => {
+  const speaker = speakerOf(event.target);
+  if (!speaker) return;
+  const field = event.target;
+  const voice = (change) => queueProjectChange({ speakers: { [speaker]: { voice: change } } });
+  if (field.type === "radio") voice({ mode: field.value });
+  else if (field.matches("[data-ref-text]")) voice({ ref_text: field.value.trim() });
+  else if (field.matches("[data-voice-id]")) voice({ voice_id: field.value.trim() });
+  else if (field.matches("[data-speaker-name]")) queueProjectChange({ speakers: { [speaker]: { name: field.value.trim() } } });
+});
+
+pv.speakerVoices.addEventListener("click", async (event) => {
+  const speaker = speakerOf(event.target);
+  if (!speaker || !currentProject) return;
+  if (event.target.closest("[data-voice-upload]")) {
+    event.preventDefault();
+    pv.voiceFileInput.dataset.speaker = speaker;
+    pv.voiceFileInput.click();
+    return;
+  }
+  const step = event.target.closest("[data-sample-step]");
+  if (!step) return;
   event.preventDefault();
-  const candidates = currentProject.voice?.candidates || [];
+  const voice = (currentProject.speaker_list || []).find((item) => item.id === speaker)?.voice || {};
+  const candidates = voice.candidates || [];
   if (!candidates.length) return;
-  const index = (Number(currentProject.voice.auto_index || 0) + Number(button.dataset.sampleStep) + candidates.length) % candidates.length;
+  const index = (Number(voice.auto_index || 0) + Number(step.dataset.sampleStep) + candidates.length) % candidates.length;
   try {
-    const data = await postJson(projectUrl(currentProject.id, "sample"), { index });
+    const data = await postJson(projectUrl(currentProject.id, "sample"), { index, speaker });
+    currentProject = data.project;
+    renderProject();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+pv.segments.addEventListener("change", async (event) => {
+  const select = event.target.closest("[data-speaker-select]");
+  if (!select || !currentProject) return;
+  const id = select.closest(".segment-row").dataset.id;
+  try {
+    await flushPhraseEdits();
+    const data = await postJson(projectUrl(currentProject.id, "phrases"), { speakers: { [id]: select.value } });
     currentProject = data.project;
     renderProject();
   } catch (error) {
@@ -560,12 +689,15 @@ function updateMixOutputs() {
 
 let pendingChanges = {};
 
+function mergeChange(target, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result = target && typeof target === "object" && !Array.isArray(target) ? { ...target } : {};
+  for (const [key, inner] of Object.entries(value)) result[key] = mergeChange(result[key], inner);
+  return result;
+}
+
 function queueProjectChange(changes, immediate = false) {
-  for (const [key, value] of Object.entries(changes)) {
-    pendingChanges[key] = typeof value === "object" && !Array.isArray(value)
-      ? { ...(pendingChanges[key] || {}), ...value }
-      : value;
-  }
+  pendingChanges = mergeChange(pendingChanges, changes);
   clearTimeout(projectSaveTimer);
   projectSaveTimer = setTimeout(() => flushProjectSave().catch((error) => alert(error.message)), immediate ? 0 : 450);
 }
@@ -583,11 +715,14 @@ async function flushProjectSave() {
 pv.name.addEventListener("change", () => queueProjectChange({ name: pv.name.value.trim() }));
 pv.sourceLanguage.addEventListener("change", () => queueProjectChange({ source_language: pv.sourceLanguage.value }));
 pv.separate.addEventListener("change", () => queueProjectChange({ separate: pv.separate.checked }));
-for (const radio of document.querySelectorAll('input[name="voiceMode"]')) {
-  radio.addEventListener("change", () => queueProjectChange({ voice: { mode: radio.value } }));
-}
-pv.voiceRefText.addEventListener("change", () => queueProjectChange({ voice: { ref_text: pv.voiceRefText.value.trim() } }));
-pv.voiceEngineId.addEventListener("change", () => queueProjectChange({ voice: { voice_id: pv.voiceEngineId.value.trim() } }));
+pv.speakers.addEventListener("change", () => {
+  const translated = (currentProject?.languages || []).some((language) => language.translated);
+  if (translated && !confirm(t("Фразы будут заново разделены между говорящими, перевод и озвучка будут сделаны заново. Продолжить?"))) {
+    pv.speakers.value = String(currentProject.speaker_count ?? 1);
+    return;
+  }
+  queueProjectChange({ speaker_count: Number(pv.speakers.value) }, true);
+});
 const timingFields = [
   [pv.timingSpeed, "speed", Number], [pv.timingTail, "tail_room", Number],
   [pv.timingMaxSpeed, "max_auto_speed", Number], [pv.timingClean, "post_clean", String],
@@ -601,21 +736,18 @@ for (const [element, key] of [[pv.mixVoice, "voice"], [pv.mixBackground, "backgr
 }
 pv.mixLoudnorm.addEventListener("change", () => queueProjectChange({ mix: { loudnorm: pv.mixLoudnorm.checked } }));
 
-async function uploadProjectFile(kind, file) {
+async function uploadProjectFile(kind, file, speaker = "") {
   const formData = new FormData();
   formData.append("file", file);
-  const data = await uploadForm(`${projectUrl(currentProject.id, "upload")}?kind=${kind}`, formData);
+  const query = `kind=${kind}${speaker ? `&speaker=${encodeURIComponent(speaker)}` : ""}`;
+  const data = await uploadForm(`${projectUrl(currentProject.id, "upload")}?${query}`, formData);
   currentProject = data.project;
   renderProject();
 }
 
-pv.voiceFileBtn.addEventListener("click", (event) => {
-  event.preventDefault();
-  pv.voiceFileInput.click();
-});
 pv.voiceFileInput.addEventListener("change", () => {
   const file = pv.voiceFileInput.files?.[0];
-  if (file) uploadProjectFile("voice", file).catch((error) => alert(error.message));
+  if (file) uploadProjectFile("voice", file, pv.voiceFileInput.dataset.speaker || "S1").catch((error) => alert(error.message));
   pv.voiceFileInput.value = "";
 });
 pv.musicFileBtn.addEventListener("click", () => pv.musicFileInput.click());

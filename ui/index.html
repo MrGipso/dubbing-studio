@@ -184,6 +184,19 @@
                   <span>Отделить голос от фона: музыка и шумы оригинала останутся в ролике</span>
                 </label>
                 <p id="separatorHint" class="hint" hidden></p>
+                <label class="field speakers-field">
+                  <span>Говорящие</span>
+                  <select id="projectSpeakers">
+                    <option value="1">Один голос на всех</option>
+                    <option value="0">Найти автоматически</option>
+                    <option value="2">2 говорящих</option>
+                    <option value="3">3 говорящих</option>
+                    <option value="4">4 говорящих</option>
+                    <option value="5">5 говорящих</option>
+                    <option value="6">6 говорящих</option>
+                  </select>
+                </label>
+                <p id="diarizerHint" class="hint" hidden></p>
                 <div class="engine-summary">
                   <div><span class="engine-kind">Перевод</span><strong data-llm-summary>—</strong></div>
                   <div><span class="engine-kind">Озвучка</span><strong data-tts-summary>—</strong></div>
@@ -200,35 +213,8 @@
 
           <section class="panel step-pane" data-pane="voice">
             <p class="hint">Каким голосом озвучить перевод. Движок: <strong data-tts-summary>—</strong> <button type="button" class="text-btn" data-open-engines>Изменить</button></p>
-            <div class="voice-modes">
-              <label class="voice-mode">
-                <input type="radio" name="voiceMode" value="original">
-                <strong>Голос оригинала</strong>
-                <span>Образец вырезается из ролика сам после шага 1.</span>
-                <div id="voiceOriginalInfo" class="voice-mode-body"></div>
-              </label>
-              <label class="voice-mode">
-                <input type="radio" name="voiceMode" value="file">
-                <strong>Свой образец</strong>
-                <span>10–30 секунд чистой речи нужного голоса.</span>
-                <div class="voice-mode-body">
-                  <div class="input-action">
-                    <button type="button" class="secondary" id="voiceFileBtn">Загрузить образец</button>
-                    <input type="file" id="voiceFileInput" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
-                  </div>
-                  <div id="voiceFileInfo"></div>
-                  <textarea id="voiceRefText" rows="2" placeholder="Что сказано в образце. Пусто — распознается само."></textarea>
-                </div>
-              </label>
-              <label class="voice-mode">
-                <input type="radio" name="voiceMode" value="engine">
-                <strong>Голос движка</strong>
-                <span>Готовый голос выбранного движка, без клонирования.</span>
-                <div class="voice-mode-body">
-                  <input id="voiceEngineId" placeholder="Имя голоса (пусто — по умолчанию)">
-                </div>
-              </label>
-            </div>
+            <div id="speakerVoices" class="speaker-voices"></div>
+            <input type="file" id="voiceFileInput" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg">
 
             <details class="accordion">
               <summary>Подгонка под тайминги</summary>
@@ -1274,6 +1260,14 @@
               <span class="badge neutral" data-engine-status>—</span>
             </div>
             <p class="hint">Голос идёт на распознавание и образец, а музыка и шумы оригинала остаются в готовом ролике.</p>
+          </div>
+
+          <div class="panel controls" id="diarizationPanel" data-engine-panel="diarization">
+            <div class="panel-head">
+              <h2>Разделение на говорящих</h2>
+              <span class="badge neutral" data-engine-status>—</span>
+            </div>
+            <p class="hint">Нужно, когда в ролике говорят несколько человек: каждый получит свой голос. Число говорящих задаётся в проекте, на шаге «Исходник».</p>
           </div>
 
           <form id="asrForm" class="panel controls" autocomplete="off">

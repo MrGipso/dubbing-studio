@@ -179,6 +179,7 @@ def settings_payload():
         "keys": keys,
         "engines": engines_payload("tts"),
         "separators": engines_payload("separator"),
+        "diarizers": engines_payload("diarizer"),
         "resident": tts_engines.resident_status(),
     }
 
@@ -1086,8 +1087,6 @@ def project_detail(directory):
         "source": (data.get("source") or {}).get("file", ""),
         "vocals": "work/vocals.wav" if (work / "vocals.wav").is_file() else "",
         "background": "work/background.wav" if (work / "background.wav").is_file() else "",
-        "sample": data["voice"].get("auto_file", ""),
-        "uploaded_sample": data["voice"].get("file", ""),
         "music": data["mix"].get("music_file", ""),
     }
     for key, relative in shared.items():
@@ -1132,26 +1131,49 @@ def project_detail(directory):
             "speedup": item_report.get("speedup"),
             "clipped": item_report.get("clipped_seconds"),
             "spoken": item_report.get("natural_seconds"),
+            "speaker": unit.get("speaker") or "S1",
             "edited": int(unit["id"]) in edited,
             "dirty": int(unit["id"]) in dirty,
             "voice_url": project_file_url(project_id, phrase_wav.relative_to(directory).as_posix()) if phrase_wav.is_file() else "",
         })
 
+    # Who speaks how much: the Voice step shows it next to every speaker.
+    spoken = {}
+    for phrase in projects.load_phrases(directory):
+        entry = spoken.setdefault(phrase.get("speaker") or "S1", [0, 0.0])
+        entry[0] += 1
+        entry[1] += max(0.0, float(phrase["end"]) - float(phrase["start"]))
+    speaker_list = []
+    for speaker_id, item in data["speakers"].items():
+        phrases, seconds = spoken.get(speaker_id, [0, 0.0])
+        speaker_list.append({
+            "id": speaker_id,
+            "name": item["name"],
+            "voice": item["voice"],
+            "sample": file_entry(item["voice"].get("auto_file")),
+            "uploaded": file_entry(item["voice"].get("file")),
+            "phrases": phrases,
+            "seconds": round(seconds, 1),
+        })
+
     settings = load_settings()
-    separator = next((item for item in tts_engines.list_engines(kind="separator")
-                      if item.get("id") == settings["separation"].get("engine")), None)
+
+    def engine_brief(kind, section):
+        engine = next((item for item in tts_engines.list_engines(kind=kind)
+                       if item.get("id") == settings[section].get("engine")), None) or {}
+        return {"id": engine.get("id"), "name": engine.get("name"),
+                "installed": bool(engine.get("status", {}).get("installed"))}
+
     snapshot = JOB.snapshot()
     return {
         **data,
         "files": files,
         "languages": languages,
+        "speaker_list": speaker_list,
         "active_track": {key: active_track[key] for key in ("translated", "voiced", "exported", "edited", "dirty")},
         "segments": segments,
-        "separator": {
-            "id": (separator or {}).get("id"),
-            "name": (separator or {}).get("name"),
-            "installed": bool((separator or {}).get("status", {}).get("installed")),
-        },
+        "separator": engine_brief("separator", "separation"),
+        "diarizer": engine_brief("diarizer", "diarization"),
         "running_job": snapshot["meta"].get("project") == project_id and snapshot["running"],
     }
 
@@ -1175,6 +1197,8 @@ def create_project_upload(handler):
             changes.update(targets=targets, active=targets[0])
         if fields.get("source_language"):
             changes["source_language"] = fields["source_language"]
+        if str(fields.get("speaker_count") or "").strip().isdigit():
+            changes["speaker_count"] = int(fields["speaker_count"])
         if changes:
             data = projects.update_project(holder["dir"], changes)
         return data
@@ -1184,20 +1208,23 @@ def create_project_upload(handler):
         raise
 
 
-def project_upload(handler, directory, kind):
+def project_upload(handler, directory, kind, speaker_id="S1"):
     if kind not in ("voice", "music"):
         raise ValueError("Unknown upload kind.")
+    if kind == "voice":
+        projects.speaker_or_error(projects.load_project(directory), speaker_id)
 
     def destination(name, fields):
         if Path(name).suffix.lower() not in projects.AUDIO_SUFFIXES | projects.VIDEO_SUFFIXES:
             raise ValueError(tr("Нужен аудиофайл."))
         folder = "voice" if kind == "voice" else "source"
-        return directory / folder / f"{kind}_{int(time.time())}{Path(safe_upload_name(name)).suffix}"
+        prefix = f"voice_{speaker_id.lower()}" if kind == "voice" else kind
+        return directory / folder / f"{prefix}_{int(time.time())}{Path(safe_upload_name(name)).suffix}"
 
     saved, _ = receive_upload(handler, destination)
     relative = saved.relative_to(directory).as_posix()
     if kind == "voice":
-        return projects.update_project(directory, {"voice": {"mode": "file", "file": relative, "ref_text": ""}})
+        return projects.update_project(directory, {"speakers": {speaker_id: {"voice": {"mode": "file", "file": relative, "ref_text": ""}}}})
     return projects.update_project(directory, {"mix": {"music_file": relative}})
 
 
@@ -1262,17 +1289,22 @@ def handle_project_post(handler, parsed):
     if action == "update":
         projects.update_project(directory, read_json(handler))
     elif action == "upload":
-        project_upload(handler, directory, parse_qs(parsed.query).get("kind", [""])[0])
+        query = parse_qs(parsed.query)
+        project_upload(handler, directory, query.get("kind", [""])[0], query.get("speaker", ["S1"])[0])
     elif action == "run":
         payload = read_json(handler)
         start_project_job(directory, str(payload.get("stage") or "all"), payload.get("ids"), payload.get("targets"))
     elif action == "phrases":
         payload = read_json(handler)
         data = projects.load_project(directory)
-        projects.set_translations(directory, data, {int(key): value for key, value in (payload.get("translations") or {}).items()},
-                                  payload.get("target") or None)
+        if payload.get("translations"):
+            projects.set_translations(directory, data, {int(key): value for key, value in payload["translations"].items()},
+                                      payload.get("target") or None)
+        if payload.get("speakers"):
+            projects.set_phrase_speakers(directory, projects.load_project(directory), payload["speakers"])
     elif action == "sample":
-        projects.choose_sample(directory, int(read_json(handler).get("index") or 0))
+        payload = read_json(handler)
+        projects.choose_sample(directory, int(payload.get("index") or 0), str(payload.get("speaker") or "S1"))
     elif action == "delete":
         projects.delete_project(directory)
         json_response(handler, {"ok": True, "projects": projects.list_projects()})

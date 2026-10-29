@@ -62,13 +62,16 @@ def load_manifest(engine_id):
     return manifest
 
 
+SECTIONS = {"separator": "separation", "diarizer": "diarization"}
+
+
 def section_for(manifest):
-    """Settings section of an engine: "tts" for voices, "separation" for vocal separators."""
-    return "separation" if manifest.get("kind") == "separator" else "tts"
+    """Settings section of an engine: "tts" for voices, "separation" / "diarization" for the helpers."""
+    return SECTIONS.get(manifest.get("kind"), "tts")
 
 
 def list_engines(include_template=False, kind="tts"):
-    """Engines of one kind ("tts" or "separator"); kind=None lists all."""
+    """Engines of one kind ("tts", "separator" or "diarizer"); kind=None lists all."""
     engines = []
     for directory in sorted(ENGINES_DIR.iterdir()):
         if not directory.is_dir() or directory.name.startswith("."):
@@ -545,6 +548,11 @@ class EngineSession:
     def separate(self, input_path, out_dir, timeout=7200):
         """Separator engines: split a mix into vocals.wav + background.wav."""
         return self.request("separate", timeout=timeout, input=str(Path(input_path).resolve()), out_dir=str(Path(out_dir).resolve()))
+
+    def diarize(self, input_path, num_speakers=None, timeout=7200):
+        """Diarizer engines: speaker turns [{"start", "end", "speaker"}] of a recording."""
+        return self.request("diarize", timeout=timeout, input=str(Path(input_path).resolve()),
+                            num_speakers=int(num_speakers) if num_speakers else None)
 
     def voices(self, settings=None):
         return self.request("voices", timeout=120, settings=settings or {}).get("voices") or []

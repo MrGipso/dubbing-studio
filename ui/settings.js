@@ -30,7 +30,7 @@ const asrEl = {
 const llmBadge = document.getElementById("llmBadge");
 const ttsBadge = document.getElementById("ttsBadge");
 
-let engineState = { settings: null, providers: [], keys: {}, engines: [], separators: [], resident: [] };
+let engineState = { settings: null, providers: [], keys: {}, engines: [], separators: [], diarizers: [], resident: [] };
 let settingsSaveTimer = null;
 const settingsListeners = [];
 
@@ -65,6 +65,7 @@ function applySettingsPayload(data) {
     keys: data.keys || {},
     engines: data.engines || [],
     separators: data.separators || [],
+    diarizers: data.diarizers || [],
     resident: data.resident || [],
   };
   for (const listener of settingsListeners) listener(engineState);
@@ -369,6 +370,7 @@ function createEnginePanel(root, section, listKey) {
         ${languages ? `<div class="meta">${escapeHtml(t("Языки: {languages}", { languages }))}</div>` : ""}
         ${engine.homepage ? `<div class="meta"><a href="${escapeHtml(engine.homepage)}" target="_blank" rel="noreferrer">${escapeHtml(engine.homepage)}</a></div>` : ""}
       `;
+      device.closest("label").hidden = Boolean(engine.cpu_only);  // e.g. ONNX engines that always run on the CPU
       const status = engine.status || {};
       badge(statusEl, status.installed ? t("Готов") : t("Не установлен"), status.installed ? "ok" : "warn");
       install.innerHTML = `
@@ -526,6 +528,7 @@ function createEnginePanel(root, section, listKey) {
 const enginePanels = [
   createEnginePanel(document.getElementById("ttsPanel"), "tts", "engines"),
   createEnginePanel(document.getElementById("separationPanel"), "separation", "separators"),
+  createEnginePanel(document.getElementById("diarizationPanel"), "diarization", "diarizers"),
 ];
 
 async function installEngine(engineId, engine) {

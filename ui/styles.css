@@ -1227,6 +1227,60 @@ input[type="range"] {
   margin-top: 8px;
 }
 
+/* Speakers: a voice card per person, and the same colour on their phrases. */
+.speaker-voices {
+  display: grid;
+  gap: 14px;
+}
+
+[data-speaker-index="0"] { --speaker: #3b82f6; }
+[data-speaker-index="1"] { --speaker: #e0743a; }
+[data-speaker-index="2"] { --speaker: #2fa36b; }
+[data-speaker-index="3"] { --speaker: #b05cc8; }
+[data-speaker-index="4"] { --speaker: #c9a227; }
+[data-speaker-index="5"] { --speaker: #d64d6f; }
+
+.speaker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.speaker-dot {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--speaker, var(--muted));
+}
+
+.speaker-name {
+  max-width: 260px;
+  font-weight: 600;
+}
+
+.speaker-card .voice-modes {
+  margin-bottom: 0;
+}
+
+.segment-row[data-speaker-index] {
+  box-shadow: inset 3px 0 0 var(--speaker);
+}
+
+.speaker-select {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  margin-top: 6px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.speakers-field select {
+  max-width: 260px;
+}
+
 .segments {
   display: grid;
   gap: 0;

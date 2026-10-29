@@ -112,6 +112,35 @@ def parse_srt(path):
     return segments
 
 
+def parse_phrases_json(path):
+    """Phrases from the project pipeline: Whisper segments with an optional speaker label."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    segments = []
+    for item in data.get("segments") or []:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        start, end = float(item["start"]), float(item["end"])
+        segment = {
+            "id": len(segments) + 1,
+            "start": start,
+            "end": end,
+            "start_srt": format_time(start),
+            "end_srt": format_time(end),
+            "duration": round(max(0.0, end - start), 3),
+            "source": text,
+            "translation": "",
+        }
+        if item.get("speaker"):
+            segment["speaker"] = str(item["speaker"])
+        segments.append(segment)
+    return segments
+
+
+def parse_input(path):
+    return parse_phrases_json(path) if Path(path).suffix.lower() == ".json" else parse_srt(path)
+
+
 def sentence_is_closed(text):
     return bool(SENTENCE_END_RE.search((text or "").strip()))
 
@@ -131,6 +160,7 @@ def make_translation_unit(unit_id, group):
         "translation": "",
         "segment_ids": [int(seg["id"]) for seg in group],
         "segment_count": len(group),
+        **({"speaker": group[0]["speaker"]} if group[0].get("speaker") else {}),
     }
 
 
@@ -159,6 +189,7 @@ def build_translation_units(segments, merge_phrases, max_gap, max_duration):
             not sentence_is_closed(previous["source"])
             and gap <= max_gap
             and merged_duration <= max_duration
+            and seg.get("speaker") == previous.get("speaker")  # never mix two people in one phrase
         )
 
         if can_merge:
@@ -217,19 +248,20 @@ def extract_json_array(text):
     return value
 
 
-def build_messages(batch, source_language, target_language, style, context=None):
+def build_messages(batch, source_language, target_language, style, context=None, speakers=False):
     payload = []
     for seg in batch:
         duration = seg["duration"]
-        payload.append(
-            {
-                "id": seg["id"],
-                "duration_sec": duration,
-                "max_words_hint": max(3, round(duration * 2.6)),
-                "source_segment_ids": seg.get("segment_ids") or [seg["id"]],
-                "source": seg["source"],
-            }
-        )
+        item = {
+            "id": seg["id"],
+            "duration_sec": duration,
+            "max_words_hint": max(3, round(duration * 2.6)),
+            "source_segment_ids": seg.get("segment_ids") or [seg["id"]],
+            "source": seg["source"],
+        }
+        if speakers and seg.get("speaker"):
+            item["speaker"] = seg["speaker"]
+        payload.append(item)
 
     system = (
         "You are a dubbing translator. "
@@ -253,6 +285,11 @@ def build_messages(batch, source_language, target_language, style, context=None)
         ],
         "dubbing_units": payload,
     }
+    if speakers:
+        user["rules"].append(
+            "speaker tells who says the line. Lines with the same speaker are one person: "
+            "keep their grammatical gender, form of address and manner consistent."
+        )
     if context:
         # Already translated neighbours keep names, terms and tone consistent
         # across batches. They are reference only and must not be returned.
@@ -260,7 +297,9 @@ def build_messages(batch, source_language, target_language, style, context=None)
             "previous_lines are already translated; use them only for consistent terms and tone, do not return them."
         )
         user["previous_lines"] = [
-            {"source": unit["source"], "translation": unit["translation"]} for unit in context
+            {"source": unit["source"], "translation": unit["translation"],
+             **({"speaker": unit["speaker"]} if speakers and unit.get("speaker") else {})}
+            for unit in context
         ]
     return [
         {"role": "system", "content": system},
@@ -268,13 +307,14 @@ def build_messages(batch, source_language, target_language, style, context=None)
     ]
 
 
-def translate_batch(llm, batch, args, context=None):
+def translate_batch(llm, batch, args, context=None, speakers=False):
     messages = build_messages(
         batch=batch,
         source_language=args.source_language,
         target_language=args.target_language,
         style=args.style,
         context=context,
+        speakers=speakers,
     )
 
     last_error = None
@@ -324,6 +364,7 @@ def load_resume(json_path):
 
 def translate_pending(llm, translation_units, args, save):
     pending = [unit for unit in translation_units if not unit.get("translation")]
+    speakers = len({unit.get("speaker") for unit in translation_units if unit.get("speaker")}) > 1
     for offset in range(0, len(pending), args.batch_size):
         batch = pending[offset : offset + args.batch_size]
         ids = ", ".join(str(unit["id"]) for unit in batch)
@@ -336,7 +377,7 @@ def translate_pending(llm, translation_units, args, save):
                 unit for unit in translation_units
                 if unit.get("translation") and unit["id"] < first_id
             ][-args.context_lines:] if args.context_lines > 0 else None
-            translations = translate_batch(llm, batch, args, context=context)
+            translations = translate_batch(llm, batch, args, context=context, speakers=speakers)
 
         for unit in translation_units:
             if unit["id"] in translations:
@@ -353,7 +394,7 @@ def translate_pending(llm, translation_units, args, save):
 def main():
     configure_stdio()
     parser = argparse.ArgumentParser(description="Translate Whisper SRT segments through any LLM provider.")
-    parser.add_argument("srt", help="Input SRT from Whisper/faster-whisper")
+    parser.add_argument("srt", help="Input SRT from Whisper/faster-whisper, or phrases JSON (with speakers) from the project pipeline")
     parser.add_argument("--target-language", default="English")
     parser.add_argument("--source-language", default="Russian")
     add_llm_arguments(parser)
@@ -385,7 +426,7 @@ def main():
     json_out = output_dir / f"{stem}.{target_slug}.segments.json"
     jsonl_out = output_dir / f"{stem}.{target_slug}.dub.jsonl"
 
-    segments = parse_srt(input_path)
+    segments = parse_input(input_path)
     if not segments:
         raise RuntimeError(f"No subtitle segments found in {input_path}")
 
@@ -489,6 +530,8 @@ def write_outputs(json_out, srt_out, txt_out, jsonl_out, segments, translation_u
                 "source_segment_ids": unit.get("segment_ids") or [int(unit["id"])],
                 "source_segment_count": unit.get("segment_count") or 1,
             }
+            if unit.get("speaker"):
+                item["speaker"] = unit["speaker"]
             if args.target_language_id:
                 item["language_id"] = args.target_language_id
             if args.ref_audio:

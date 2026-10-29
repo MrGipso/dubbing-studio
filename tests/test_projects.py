@@ -88,7 +88,7 @@ class ProjectStateTests(TempProjects):
         directory, data = project.create_from_file(source, "Тест", ["German"])
         self.assertEqual(data["source"]["duration"], 3.0)
         self.assertFalse(data["source"]["has_video"])
-        data["transcribed"] = True
+        data["transcribed"] = data["diarized"] = True
         data["tracks"]["de"].update(translated=True, voiced=True, exported=True)
         project.save_project(directory, data)
         self.assertEqual(project.load_project(directory)["state"], {"prepared": True, "voiced": True, "exported": True})
@@ -137,6 +137,9 @@ class ProjectStateTests(TempProjects):
         self.assertEqual(spanish["dirty"], [3])
         self.assertEqual(spanish["voice_track"], "output/x.es.voice.wav")
         self.assertNotIn("voice_track", data)
+        # One voice for the whole video, already "diarized" because it was transcribed.
+        self.assertEqual(list(data["speakers"]), ["S1"])
+        self.assertTrue(data["diarized"])
 
     def test_voice_sample_candidates_and_choice(self):
         source = self.tmp / "clip.wav"
@@ -153,13 +156,13 @@ class ProjectStateTests(TempProjects):
         (work / "transcript.json").write_text(json.dumps({"segments": segments}, ensure_ascii=False), encoding="utf-8")
         project.stage_voice_sample(directory, data)
         project.save_project(directory, data)
-        voice = project.load_project(directory)["voice"]
+        voice = project.load_project(directory)["speakers"]["S1"]["voice"]
         self.assertEqual(len(voice["candidates"]), 2)
         self.assertEqual(voice["auto_text"], "Раз. Два.")
-        chosen = project.choose_sample(directory, 1)["voice"]
+        chosen = project.choose_sample(directory, 1)["speakers"]["S1"]["voice"]
         self.assertEqual(chosen["auto_index"], 1)
         self.assertEqual(chosen["auto_text"], "Три. Четыре.")
-        self.assertAlmostEqual(sf.info(str(directory / "voice" / "original.wav")).duration, 9.74, places=1)
+        self.assertAlmostEqual(sf.info(str(directory / "voice" / "original_s1.wav")).duration, 9.74, places=1)
 
     def test_delete_moves_to_trash(self):
         source = self.tmp / "clip.wav"

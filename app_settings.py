@@ -35,6 +35,11 @@ DEFAULT_SETTINGS = {
         "device": "auto",
         "engines": {},
     },
+    "diarization": {
+        "engine": "sherpa_diarization",
+        "device": "cpu",
+        "engines": {},
+    },
     "asr": {
         "model": "medium",
         "device": "cuda",

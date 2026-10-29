@@ -8,11 +8,15 @@ projects/<id>/
   output/          finished files per language: video with the dub, mix, voice track, subtitles
 
 A project has one source and any number of target languages. Separation,
-Whisper and the voice sample are done once; translation, voicing and export
-are done per language ("tracks" in project.json).
+Whisper, finding the speakers and their voice samples are done once;
+translation, voicing and export are done per language ("tracks").
+
+A project can have several speakers ("speakers" in project.json): every
+phrase belongs to one of them, and every speaker has their own voice.
+speaker_count: 1 = one voice for everyone, 0 = find the speakers, N = exactly N.
 
 Stages:
-  prepare   extract audio -> separate voice/background -> Whisper -> voice sample -> translate every language
+  prepare   extract audio -> separate voice/background -> Whisper -> speakers -> voice samples -> translate every language
   translate translate languages that are not translated yet (reuses Whisper)
   voice     synthesize every translated language with the chosen TTS engine (dub.py)
   export    mix voice + original background (+ music) and put it back into the video
@@ -50,19 +54,24 @@ VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
 MP4_FRIENDLY = {".mp4", ".mov", ".m4v"}
 
+DEFAULT_VOICE = {
+    "mode": "original", "file": "", "ref_text": "", "voice_id": "",
+    "auto_file": "", "auto_text": "", "auto_range": [], "candidates": [], "auto_index": 0,
+}
+VOICE_FIELDS = ("mode", "file", "ref_text", "voice_id")  # what the UI may change
+MAX_SPEAKERS = 8
 DEFAULT_PROJECT = {
     "name": "",
     "source_language": "auto",
     "separate": True,
+    "speaker_count": 1,
     "targets": ["English"],
     "active": "English",
-    "voice": {
-        "mode": "original", "file": "", "ref_text": "", "voice_id": "",
-        "auto_file": "", "auto_text": "", "auto_range": [], "candidates": [], "auto_index": 0,
-    },
+    "speakers": {},
     "timing": {"speed": 1.0, "tail_room": 0.6, "max_auto_speed": 1.18, "post_clean": "soft"},
     "mix": {"voice": 1.0, "background": 0.8, "music": 0.25, "music_file": "", "loudnorm": True},
     "transcribed": False,
+    "diarized": False,
     "separated": False,
     "detected_language": "",
     "tracks": {},
@@ -111,7 +120,7 @@ def project_dir(project_id):
 def merge_defaults(data):
     merged = json.loads(json.dumps(DEFAULT_PROJECT))
     for key, value in (data or {}).items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict) and key != "tracks":
+        if isinstance(value, dict) and isinstance(merged.get(key), dict) and key not in ("tracks", "speakers"):
             merged[key].update(value)
         else:
             merged[key] = value
@@ -119,22 +128,48 @@ def merge_defaults(data):
 
 
 def migrate(directory, data):
-    """Projects from before multi-language support had one 'target' at the top level."""
-    if data.get("tracks") or "target" not in data:
-        return data
-    target = data.pop("target") or "English"
-    old_state = data.pop("state", {}) or {}
-    track = dict(DEFAULT_TRACK, name=target)
-    track["translated"] = bool(old_state.get("prepared"))
-    track["voiced"] = bool(old_state.get("voiced"))
-    track["exported"] = bool(old_state.get("exported"))
-    for key in ("edited", "dirty", *TRACK_FILES):
-        if key in data:
-            track[key] = data.pop(key)
-    data["tracks"] = {code_for(target): track}
-    data["targets"] = [target]
-    data["active"] = target
-    data["transcribed"] = (Path(directory) / "work" / "transcript.json").is_file()
+    """Older project.json layouts: one 'target' at the top level, one 'voice' for the whole video."""
+    if not data.get("tracks") and "target" in data:
+        target = data.pop("target") or "English"
+        old_state = data.pop("state", {}) or {}
+        track = dict(DEFAULT_TRACK, name=target)
+        track["translated"] = bool(old_state.get("prepared"))
+        track["voiced"] = bool(old_state.get("voiced"))
+        track["exported"] = bool(old_state.get("exported"))
+        for key in ("edited", "dirty", *TRACK_FILES):
+            if key in data:
+                track[key] = data.pop(key)
+        data["tracks"] = {code_for(target): track}
+        data["targets"] = [target]
+        data["active"] = target
+        data["transcribed"] = (Path(directory) / "work" / "transcript.json").is_file()
+    if "voice" in data and not data.get("speakers"):
+        data["speakers"] = {"S1": {"name": "", "voice": data.pop("voice") or {}}}
+    # Projects transcribed before speakers existed have one voice for every phrase.
+    data.setdefault("diarized", bool(data.get("transcribed")))
+    return data
+
+
+def speaker_number(speaker_id):
+    digits = re.sub(r"\D", "", str(speaker_id))
+    return int(digits) if digits else 0
+
+
+def sync_speakers(data):
+    """At least one speaker; every speaker has a name and a complete voice entry."""
+    speakers = data.get("speakers") if isinstance(data.get("speakers"), dict) else {}
+    result = {}
+    for speaker_id in sorted(speakers or {"S1": {}}, key=speaker_number):
+        item = (speakers or {}).get(speaker_id) or {}
+        voice = json.loads(json.dumps(DEFAULT_VOICE))
+        voice.update(item.get("voice") or {})
+        result[speaker_id] = {"name": str(item.get("name") or ""), "voice": voice}
+    data["speakers"] = result
+    try:
+        count = int(data.get("speaker_count", 1))
+    except (TypeError, ValueError):
+        count = 1
+    data["speaker_count"] = max(0, min(MAX_SPEAKERS, count))
     return data
 
 
@@ -178,7 +213,7 @@ def track(data, target=None):
 def load_project(directory):
     directory = Path(directory)
     raw = json.loads((directory / "project.json").read_text(encoding="utf-8"))
-    data = sync_tracks(merge_defaults(migrate(directory, raw)))
+    data = sync_speakers(sync_tracks(merge_defaults(migrate(directory, raw))))
     data["state"] = summary_state(data)
     data["id"] = directory.name
     return data
@@ -186,7 +221,7 @@ def load_project(directory):
 
 def save_project(directory, data):
     directory = Path(directory)
-    data = sync_tracks(dict(data))
+    data = sync_speakers(sync_tracks(dict(data)))
     data["state"] = summary_state(data)
     data.pop("id", None)
     data["updated"] = time.time()
@@ -203,11 +238,31 @@ def reset_track(item, keep_translation=False):
         item["dirty"] = []
 
 
+def merge_speakers(data, changes):
+    """Names and voice choices of existing speakers; True when a voice changed."""
+    voice_changed = False
+    for speaker_id, change in (changes or {}).items():
+        item = data["speakers"].get(speaker_id)
+        if item is None or not isinstance(change, dict):
+            continue
+        if "name" in change:
+            item["name"] = str(change["name"] or "").strip()[:60]
+        for key, value in (change.get("voice") or {}).items():
+            if key in VOICE_FIELDS and item["voice"].get(key) != str(value or ""):
+                item["voice"][key] = str(value or "")
+                voice_changed = True
+    return voice_changed
+
+
 def update_project(directory, changes):
     """Merge changes from the UI and invalidate whatever they make stale."""
     changes = dict(changes or {})
+    if isinstance(changes.get("voice"), dict):  # old clients: one voice for the whole video
+        changes.setdefault("speakers", {}).setdefault("S1", {})["voice"] = changes.pop("voice")
     data = load_project(directory)
-    allowed = {"name", "source_language", "targets", "active", "separate", "voice", "timing", "mix"}
+    old_count = data["speaker_count"]
+    allowed = {"name", "source_language", "targets", "active", "separate", "speaker_count", "timing", "mix"}
+    voice_changed = merge_speakers(data, changes.get("speakers"))
     for key, value in changes.items():
         if key not in allowed:
             continue
@@ -218,14 +273,19 @@ def update_project(directory, changes):
     if "target" in changes:  # old clients: a single target language
         data["targets"] = [changes["target"]]
         data["active"] = changes["target"]
-    sync_tracks(data)
+    sync_speakers(sync_tracks(data))
 
     if {"source_language", "separate"} & set(changes):
         # A different input invalidates everything that came out of it.
-        data["transcribed"] = False
+        data["transcribed"] = data["diarized"] = False
         for item in data["tracks"].values():
             reset_track(item)
-    elif "voice" in changes or "timing" in changes:
+    elif data["speaker_count"] != old_count:
+        # Phrases are split and merged per speaker, so the translation is redone.
+        data["diarized"] = False
+        for item in data["tracks"].values():
+            reset_track(item)
+    elif voice_changed or "timing" in changes:
         for item in data["tracks"].values():
             reset_track(item, keep_translation=True)
             item["dirty"] = []
@@ -268,7 +328,7 @@ def attach_source(directory, source_path):
     return load_project(directory)
 
 
-def create_from_file(path, name="", targets=("English",)):
+def create_from_file(path, name="", targets=("English",), speaker_count=1):
     path = Path(path)
     if isinstance(targets, str):
         targets = [targets]
@@ -276,8 +336,10 @@ def create_from_file(path, name="", targets=("English",)):
     destination = directory / "source" / path.name
     shutil.copy2(path, destination)
     data = attach_source(directory, destination)
+    changes = {"speaker_count": speaker_count}
     if targets:
-        data = update_project(directory, {"targets": list(targets), "active": list(targets)[0]})
+        changes.update(targets=list(targets), active=list(targets)[0])
+    data = update_project(directory, changes)
     return directory, data
 
 
@@ -302,6 +364,7 @@ def summary(data):
         "id": data["id"],
         "name": data.get("name"),
         "targets": data.get("targets"),
+        "speakers": len(data.get("speakers") or {}) if data.get("diarized") else 0,
         "source_name": source.get("original_name"),
         "duration": source.get("duration"),
         "has_video": source.get("has_video"),
@@ -373,19 +436,37 @@ def run_ffmpeg(args, label):
 # Voice sample from the original
 
 
-def reference_candidates(segments, count=5, min_len=6.0, target=12.0, max_len=18.0, max_gap=0.8):
+def is_speech(segment):
+    """Whisper's own rule: silence only when no_speech_prob is high AND the text is unsure.
+
+    no_speech_prob alone is per 30 s window and is often high for clear speech.
+    """
+    return segment["end"] > segment["start"] and not (
+        segment.get("no_speech_prob", 0) > 0.6 and segment.get("avg_logprob", 0) < -1.0)
+
+
+def reference_candidates(segments, count=5, min_len=6.0, target=12.0, max_len=18.0, max_gap=0.8, speaker=None):
     """Best non-overlapping runs of clean consecutive speech for voice cloning.
 
-    segments: Whisper segments with start, end, text, avg_logprob, no_speech_prob.
+    segments: Whisper segments with start, end, text, avg_logprob, no_speech_prob
+    (and speaker). With `speaker`, a run only has that person's phrases.
     Returns [(start, end, text), ...], best first.
     """
-    good = [s for s in segments if s.get("no_speech_prob", 0) < 0.6 and s["end"] > s["start"]]
+    good = [s for s in segments if is_speech(s)]
+
+    def own(segment):
+        return speaker is None or segment.get("speaker", "S1") == speaker
+
     windows = []
     for i in range(len(good)):
+        if not own(good[i]):
+            continue
         start = good[i]["start"]
         confidence = 0.0
         texts = []
         for j in range(i, len(good)):
+            if not own(good[j]):
+                break  # somebody else speaks in between
             if j > i and good[j]["start"] - good[j - 1]["end"] > max_gap:
                 break
             end = good[j]["end"]
@@ -404,10 +485,42 @@ def reference_candidates(segments, count=5, min_len=6.0, target=12.0, max_len=18
         if len(chosen) >= count:
             break
     if not chosen:
-        longest = max(good, key=lambda s: s["end"] - s["start"], default=None)
+        longest = max((s for s in good if own(s)), key=lambda s: s["end"] - s["start"], default=None)
         if longest and longest["end"] - longest["start"] >= 2.5:
             chosen.append((longest["start"], longest["end"], longest["text"].strip()))
     return chosen
+
+
+def stitched_sample(segments, speaker=None, target=12.0, min_total=3.0):
+    """Short phrases of one speaker glued together, for someone without a long run of speech."""
+    own = [s for s in segments if is_speech(s) and s["end"] - s["start"] >= 0.8
+           and (speaker is None or s.get("speaker", "S1") == speaker)]
+    picked, total = [], 0.0
+    for segment in sorted(own, key=lambda s: s.get("avg_logprob", -1.0), reverse=True):
+        if total >= target:
+            break
+        picked.append(segment)
+        total += segment["end"] - segment["start"]
+    if total < min_total:
+        return None
+    picked.sort(key=lambda s: s["start"])
+    return {
+        "start": round(picked[0]["start"], 2),
+        "end": round(picked[-1]["end"], 2),
+        "text": " ".join(s["text"].strip() for s in picked),
+        "parts": [[round(s["start"], 2), round(s["end"], 2)] for s in picked],
+    }
+
+
+def sample_candidates(segments, speaker=None):
+    """Voice sample options for one speaker, best first."""
+    candidates = [{"start": round(start, 2), "end": round(end, 2), "text": text}
+                  for start, end, text in reference_candidates(segments, speaker=speaker)]
+    if not candidates or candidates[0]["end"] - candidates[0]["start"] < 6.0:
+        stitched = stitched_sample(segments, speaker)
+        if stitched:
+            candidates.insert(0, stitched)
+    return candidates
 
 
 def pick_reference(segments, **kwargs):
@@ -415,18 +528,25 @@ def pick_reference(segments, **kwargs):
     return candidates[0] if candidates else None
 
 
-def cut_reference(source_wav, start, end, destination, margin=0.12):
+def cut_reference(source_wav, start, end, destination, margin=0.12, parts=None):
+    """Cut [start, end] (or several `parts`, joined by short pauses) into a voice sample."""
     audio, rate = sf.read(str(source_wav), dtype="float32", always_2d=True)
-    a = max(0, int((start - margin) * rate))
-    b = min(len(audio), int((end + margin) * rate))
-    clip = audio[a:b].mean(axis=1)
+    pieces = []
+    for part_start, part_end in parts or [(start, end)]:
+        a = max(0, int((part_start - margin) * rate))
+        b = min(len(audio), int((part_end + margin) * rate))
+        piece = audio[a:b].mean(axis=1)
+        fade = min(len(piece) // 4, int(0.02 * rate))
+        if fade > 1:
+            piece[:fade] *= np.linspace(0, 1, fade, dtype=np.float32)
+            piece[-fade:] *= np.linspace(1, 0, fade, dtype=np.float32)
+        if pieces:
+            pieces.append(np.zeros(int(0.3 * rate), dtype=np.float32))
+        pieces.append(piece)
+    clip = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
     peak = float(np.max(np.abs(clip))) if len(clip) else 0.0
     if peak > 1e-6:
         clip = clip / peak * 0.9
-    fade = min(len(clip) // 4, int(0.02 * rate))
-    if fade > 1:
-        clip[:fade] *= np.linspace(0, 1, fade, dtype=np.float32)
-        clip[-fade:] *= np.linspace(1, 0, fade, dtype=np.float32)
     Path(destination).parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(destination), clip, rate)
     return len(clip) / rate
@@ -436,31 +556,234 @@ def speech_wav(directory, data):
     return Path(directory) / "work" / ("vocals.wav" if data.get("separated") else "audio.wav")
 
 
-def use_sample(directory, data, index):
-    """Cut candidate number `index` into voice/original.wav."""
-    voice = data["voice"]
+def speaker_or_error(data, speaker_id):
+    if speaker_id not in data["speakers"]:
+        raise ProjectError(tr("Нет говорящего {speaker}.", speaker=speaker_id))
+    return data["speakers"][speaker_id]
+
+
+def use_sample(directory, data, index, speaker_id="S1"):
+    """Cut candidate number `index` of a speaker into voice/original_<speaker>.wav."""
+    voice = speaker_or_error(data, speaker_id)["voice"]
     candidates = voice.get("candidates") or []
     if not candidates:
         raise ProjectError(tr("Нет отрывков для образца голоса: сначала распознайте исходник."))
     index = max(0, min(int(index), len(candidates) - 1))
     candidate = candidates[index]
+    relative = f"voice/original_{speaker_id.lower()}.wav"
     seconds = cut_reference(speech_wav(directory, data), candidate["start"], candidate["end"],
-                            Path(directory) / "voice" / "original.wav")
-    voice.update(auto_file="voice/original.wav", auto_text=candidate["text"],
+                            Path(directory) / relative, parts=candidate.get("parts"))
+    voice.update(auto_file=relative, auto_text=candidate["text"],
                  auto_range=[candidate["start"], candidate["end"]], auto_index=index)
     return seconds
 
 
-def choose_sample(directory, index):
-    """UI: switch the original-voice sample to another fragment of the video."""
+def choose_sample(directory, index, speaker_id="S1"):
+    """UI: switch a speaker's original-voice sample to another fragment of the video."""
     data = load_project(directory)
-    use_sample(directory, data, index)
-    if data["voice"].get("mode", "original") == "original":
+    use_sample(directory, data, index, speaker_id)
+    if data["speakers"][speaker_id]["voice"].get("mode", "original") == "original":
         for item in data["tracks"].values():
             reset_track(item, keep_translation=True)
             item["dirty"] = []
     save_project(directory, data)
     return load_project(directory)
+
+
+# --------------------------------------------------------------------------
+# Speakers
+
+
+def transcript_path(directory):
+    """Phrases with speakers: what translation, samples and the phrase table use."""
+    return Path(directory) / "work" / "transcript.json"
+
+
+def load_phrases(directory):
+    path = transcript_path(directory)
+    if not path.is_file():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("segments") or []
+
+
+def speaker_at(turns, start, end):
+    """Speaker of the turn that covers most of [start, end]; the nearest turn when none overlaps."""
+    best, best_overlap = None, 0.0
+    for turn in turns:
+        overlap = min(end, turn["end"]) - max(start, turn["start"])
+        if overlap > best_overlap:
+            best, best_overlap = turn["speaker"], overlap
+    if best is None and turns:
+        middle = (start + end) / 2
+        best = min(turns, key=lambda turn: max(turn["start"] - middle, middle - turn["end"], 0.0))["speaker"]
+    return best
+
+
+def absorb_short_runs(runs, min_seconds=0.6):
+    """A word or two given to another voice inside a phrase is usually a slip of the diarizer."""
+    def seconds(run):
+        return run["words"][-1]["end"] - run["words"][0]["start"]
+
+    while len(runs) > 1:
+        short = next((i for i, run in enumerate(runs) if seconds(run) < min_seconds and len(run["words"]) <= 2), None)
+        if short is None:
+            break
+        if short == 0 or (short < len(runs) - 1 and seconds(runs[short + 1]) > seconds(runs[short - 1])):
+            runs[short + 1]["words"][:0] = runs[short]["words"]
+        else:
+            runs[short - 1]["words"].extend(runs[short]["words"])
+        del runs[short]
+        merged = [runs[0]]
+        for run in runs[1:]:
+            if run["speaker"] == merged[-1]["speaker"]:
+                merged[-1]["words"].extend(run["words"])
+            else:
+                merged.append(run)
+        runs = merged
+    return runs
+
+
+def assign_speakers(segments, turns):
+    """Label Whisper phrases with speakers S1, S2, ...; a phrase where the voice changes is split by words."""
+    if not turns:
+        return [dict(segment, speaker="S1") for segment in segments]
+    phrases = []
+    for segment in segments:
+        words = [word for word in segment.get("words") or [] if str(word.get("word") or "").strip()]
+        if not words:
+            phrases.append(dict(segment, speaker=speaker_at(turns, segment["start"], segment["end"])))
+            continue
+        runs = []
+        for word in words:
+            who = speaker_at(turns, word["start"], max(word["end"], word["start"] + 0.01))
+            if runs and runs[-1]["speaker"] == who:
+                runs[-1]["words"].append(word)
+            else:
+                runs.append({"speaker": who, "words": [word]})
+        runs = absorb_short_runs(runs)
+        if len(runs) == 1:
+            phrases.append(dict(segment, speaker=runs[0]["speaker"]))
+            continue
+        for run in runs:
+            phrase = {key: segment[key] for key in ("avg_logprob", "no_speech_prob") if key in segment}
+            phrase.update(start=run["words"][0]["start"], end=run["words"][-1]["end"],
+                          text="".join(word["word"] for word in run["words"]).strip(),
+                          speaker=run["speaker"], words=run["words"])
+            phrases.append(phrase)
+    order = {}
+    for phrase in phrases:
+        order.setdefault(phrase["speaker"], f"S{len(order) + 1}")
+    for phrase in phrases:
+        phrase["speaker"] = order[phrase["speaker"]]
+    return [phrase for phrase in phrases if phrase["text"]]
+
+
+def find_speaker_turns(directory, data, settings, count):
+    """Speaker turns from the diarization engine; [] (one voice) when it is not available."""
+    section = settings.get("diarization") or {}
+    engine_id = section.get("engine") or "sherpa_diarization"
+    try:
+        manifest = tts_engines.load_manifest(engine_id)
+    except tts_engines.EngineError:
+        print("WARNING: " + tr("движок разделения на говорящих «{engine}» не найден, все фразы озвучатся одним голосом.",
+                               engine=engine_id), flush=True)
+        return []
+    if not tts_engines.engine_status(manifest).get("installed"):
+        print("WARNING: " + tr("{name} не установлен (Настройки → Разделение на говорящих). Все фразы озвучатся одним голосом.",
+                               name=manifest["name"]), flush=True)
+        return []
+    speech = Path(directory) / "work" / "speech_16k.wav"
+    run_ffmpeg(["-i", str(speech_wav(directory, data)), "-ac", "1", "-ar", "16000", str(speech)],
+               tr("Готовлю звук для определения говорящих"))
+    try:
+        with tts_engines.EngineSession(engine_id) as session:
+            session.load(tts_engines.resolve_settings(manifest), section.get("device") or "cpu")
+            result = session.diarize(speech, None if count == 0 else count)
+    finally:
+        speech.unlink(missing_ok=True)
+    return result.get("turns") or []
+
+
+def stage_diarize(directory, data, settings):
+    """Who says what: work/whisper.json -> work/transcript.json (+ .srt) with a speaker per phrase."""
+    import translate_srt
+
+    work = Path(directory) / "work"
+    raw_path = work / "whisper.json"
+    if not raw_path.is_file():
+        if not transcript_path(directory).is_file():
+            raise ProjectError(tr("Сначала распознайте и переведите исходник."))
+        shutil.copy2(transcript_path(directory), raw_path)  # projects transcribed before speakers existed
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    segments = raw.get("segments") or []
+    count = data["speaker_count"]
+    turns = find_speaker_turns(directory, data, settings, count) if count != 1 and segments else []
+    phrases = assign_speakers(segments, turns)
+    speaker_ids = list(dict.fromkeys(phrase["speaker"] for phrase in phrases)) or ["S1"]
+    transcript = {key: raw[key] for key in ("language", "language_probability", "duration") if key in raw}
+    transcript.update(speakers=speaker_ids, segments=phrases)
+    transcript_path(directory).write_text(json.dumps(transcript, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    translate_srt.write_srt(work / "transcript.srt",
+                            [{"start": p["start"], "end": p["end"], "source": p["text"]} for p in phrases])
+    # Names and voice choices survive a re-run for speakers that still exist.
+    old = data["speakers"]
+    data["speakers"] = {speaker_id: old.get(speaker_id, {}) for speaker_id in speaker_ids}
+    sync_speakers(data)
+    data["diarized"] = True
+    if count != 1:
+        print(tr("Говорящих: {count}", count=len(speaker_ids)), flush=True)
+
+
+def set_phrase_speakers(directory, data, changes):
+    """Give phrases (ids of the active language) to another speaker, in every language."""
+    changes = {int(key): str(value) for key, value in (changes or {}).items()}
+    for speaker_id in set(changes.values()):
+        speaker_or_error(data, speaker_id)
+    units = {int(unit["id"]): unit for unit in load_units(directory, data["active"])}
+    missing = sorted(set(changes) - set(units))
+    if missing:
+        raise ProjectError(tr("Нет фраз с номерами: {ids}", ids=missing))
+    transcript = json.loads(transcript_path(directory).read_text(encoding="utf-8"))
+    phrases = transcript.get("segments") or []
+    for unit_id, speaker_id in changes.items():
+        for segment_id in units[unit_id].get("segment_ids") or [unit_id]:
+            if 0 < int(segment_id) <= len(phrases):
+                phrases[int(segment_id) - 1]["speaker"] = speaker_id
+    transcript_path(directory).write_text(json.dumps(transcript, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    for target in data["targets"]:
+        units_file = units_path(directory, target)
+        if not units_file.is_file():
+            continue
+        payload = json.loads(units_file.read_text(encoding="utf-8"))
+        changed = {}
+        for unit in payload.get("translation_units") or []:
+            segment_ids = unit.get("segment_ids") or [unit["id"]]
+            first = int(segment_ids[0])
+            speaker_id = phrases[first - 1].get("speaker", "S1") if 0 < first <= len(phrases) else unit.get("speaker")
+            if speaker_id and unit.get("speaker", "S1") != speaker_id:
+                unit["speaker"] = speaker_id
+                changed[unit_key(unit["id"])] = speaker_id
+        if not changed:
+            continue
+        units_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        plan = plan_path(directory, target)
+        if plan.is_file():
+            lines = []
+            for line in plan.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    item = json.loads(line)
+                    if item.get("id") in changed:
+                        item["speaker"] = changed[item["id"]]
+                    lines.append(json.dumps(item, ensure_ascii=False))
+            plan.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        item = track(data, target)
+        if item.get("voiced"):
+            ids = {int(key.split("_")[-1]) for key in changed}
+            item["dirty"] = sorted(set(item.get("dirty") or []) | ids)
+            item["exported"] = False
+    save_project(directory, data)
+    return data
 
 
 # --------------------------------------------------------------------------
@@ -558,31 +881,32 @@ def stage_transcribe(directory, data, settings):
         "--device", str(asr.get("device") or "cuda"),
         "--compute-type", str(asr.get("computeType") or "float16"),
         "--output-dir", str(work),
-        "--output-prefix", "transcript",
+        "--output-prefix", "whisper",
+        "--word-timestamps",  # lets a phrase be split where the speaker changes
     ], tr("Распознаю речь (Whisper)"))
-    transcript = json.loads((work / "transcript.json").read_text(encoding="utf-8"))
+    transcript = json.loads((work / "whisper.json").read_text(encoding="utf-8"))
     data["detected_language"] = transcript.get("language")
     if not transcript.get("segments"):
         raise ProjectError(tr("Whisper не нашёл речь в исходнике."))
     data["transcribed"] = True
+    data["diarized"] = False
 
 
 def stage_voice_sample(directory, data):
-    """Find fragments of the original speaker for cloning and cut the best one."""
-    transcript = json.loads((directory / "work" / "transcript.json").read_text(encoding="utf-8"))
-    voice = data["voice"]
-    voice["candidates"] = [
-        {"start": round(start, 2), "end": round(end, 2), "text": text}
-        for start, end, text in reference_candidates(transcript.get("segments") or [])
-    ]
-    voice.update(auto_file="", auto_text="", auto_range=[], auto_index=0)
-    if not voice["candidates"]:
-        print("WARNING: " + tr("не нашёл подходящего отрывка речи для образца голоса."), flush=True)
-        return
-    seconds = use_sample(directory, data, 0)
-    start, end = voice["auto_range"]
-    print(tr("Образец голоса: {seconds:.1f} с ({start:.1f}–{end:.1f} с исходника), вариантов: {count}",
-             seconds=seconds, start=start, end=end, count=len(voice["candidates"])), flush=True)
+    """Find fragments of every speaker for cloning and cut the best one of each."""
+    segments = load_phrases(directory)
+    for speaker_id, item in data["speakers"].items():
+        voice = item["voice"]
+        voice["candidates"] = sample_candidates(segments, speaker_id)
+        voice.update(auto_file="", auto_text="", auto_range=[], auto_index=0)
+        label = item.get("name") or speaker_id
+        if not voice["candidates"]:
+            print("WARNING: " + tr("{speaker}: не нашёл подходящего отрывка речи для образца голоса.", speaker=label), flush=True)
+            continue
+        seconds = use_sample(directory, data, 0, speaker_id)
+        start, end = voice["auto_range"]
+        print(tr("Образец голоса {speaker}: {seconds:.1f} с ({start:.1f}–{end:.1f} с исходника), вариантов: {count}",
+                 speaker=label, seconds=seconds, start=start, end=end, count=len(voice["candidates"])), flush=True)
 
 
 def stage_translate(directory, data, settings, target):
@@ -594,7 +918,7 @@ def stage_translate(directory, data, settings, target):
     for stale in (plan, plan.with_name(plan.stem + ".partial.jsonl")):
         stale.unlink(missing_ok=True)
     run([
-        sys.executable, str(ROOT / "translate_srt.py"), str(work / "transcript.srt"),
+        sys.executable, str(ROOT / "translate_srt.py"), str(transcript_path(directory)),
         "--target-language", str(target),
         "--source-language", source_language,
         "--target-language-id", code_for(target),
@@ -608,7 +932,7 @@ def stage_translate(directory, data, settings, target):
     item["translated"] = True
 
 
-def transcribe_sample(directory, path, settings):
+def transcribe_sample(directory, path, settings, speaker_id="S1"):
     """Transcript of an uploaded voice sample (cloning works best with it)."""
     asr = settings["asr"]
     run([
@@ -618,9 +942,34 @@ def transcribe_sample(directory, path, settings):
         "--device", str(asr.get("device") or "cuda"),
         "--compute-type", str(asr.get("computeType") or "float16"),
         "--output-dir", str(directory / "voice"),
-        "--output-prefix", "sample_transcript",
+        "--output-prefix", f"sample_transcript_{speaker_id.lower()}",
     ], tr("Распознаю образец голоса"))
-    return (directory / "voice" / "sample_transcript.txt").read_text(encoding="utf-8").strip()
+    return (directory / "voice" / f"sample_transcript_{speaker_id.lower()}.txt").read_text(encoding="utf-8").strip()
+
+
+def speaker_voices(directory, data, settings):
+    """{speaker: {"ref_audio", "ref_text"} or {"voice_id"}} for dub.py --voices."""
+    voices = {}
+    for speaker_id, item in data["speakers"].items():
+        voice = item["voice"]
+        mode = voice.get("mode") or "original"
+        label = item.get("name") or speaker_id
+        if mode == "original" and voice.get("auto_file") and (directory / voice["auto_file"]).is_file():
+            voices[speaker_id] = {"ref_audio": str(directory / voice["auto_file"]), "ref_text": voice.get("auto_text") or ""}
+        elif mode == "file" and voice.get("file"):
+            sample = directory / voice["file"]
+            if not sample.is_file():
+                raise ProjectError(tr("Файл образца голоса не найден, загрузите его заново на шаге «Голос»."))
+            if not voice.get("ref_text"):
+                voice["ref_text"] = transcribe_sample(directory, sample, settings, speaker_id)
+                save_project(directory, data)
+            voices[speaker_id] = {"ref_audio": str(sample), "ref_text": voice["ref_text"]}
+        elif mode == "engine" and voice.get("voice_id"):
+            voices[speaker_id] = {"voice_id": voice["voice_id"]}
+        elif mode == "original":
+            print("WARNING: " + tr("{speaker}: образца голоса оригинала нет, движок возьмёт голос по умолчанию.",
+                                   speaker=label), flush=True)
+    return voices
 
 
 def stage_voice(directory, data, settings, target, only=None):
@@ -630,30 +979,18 @@ def stage_voice(directory, data, settings, target, only=None):
     tts = settings["tts"]
     engine_id = tts.get("engine") or "omnivoice"
     manifest = tts_engines.load_manifest(engine_id)
-    voice = data["voice"]
     code = code_for(target)
+    voices_file = directory / "work" / "voices.json"
+    voices_file.write_text(json.dumps(speaker_voices(directory, data, settings), ensure_ascii=False, indent=2) + "\n",
+                           encoding="utf-8")
     command = [
         sys.executable, str(ROOT / "dub.py"), str(plan),
         "--engine", engine_id,
         "--device", str(tts.get("device") or "auto"),
         "--engine-settings", json.dumps(tts_engines.resolve_settings(manifest), ensure_ascii=False),
         "--language", code,
+        "--voices", str(voices_file),
     ]
-    mode = voice.get("mode") or "original"
-    if mode == "original" and voice.get("auto_file"):
-        command += ["--ref-audio", str(directory / voice["auto_file"]), "--ref-text", voice.get("auto_text") or ""]
-    elif mode == "file" and voice.get("file"):
-        sample = directory / voice["file"]
-        if not sample.is_file():
-            raise ProjectError(tr("Файл образца голоса не найден, загрузите его заново на шаге «Голос»."))
-        if not voice.get("ref_text"):
-            voice["ref_text"] = transcribe_sample(directory, sample, settings)
-            save_project(directory, data)
-        command += ["--ref-audio", str(sample), "--ref-text", voice["ref_text"]]
-    elif mode == "engine" and voice.get("voice_id"):
-        command += ["--voice-id", voice["voice_id"]]
-    elif mode == "original":
-        print("WARNING: " + tr("образца голоса оригинала нет, движок возьмёт голос по умолчанию."), flush=True)
 
     timing = data["timing"]
     output = directory / "output" / f"{output_base(data)}.{code}.voice.wav"
@@ -900,7 +1237,8 @@ LABELS = {
     "extract": "Извлечение звука",
     "separate": "Отделение голоса от фона",
     "transcribe": "Распознавание речи",
-    "sample": "Образец голоса",
+    "diarize": "Определение говорящих",
+    "sample": "Образцы голосов",
     "translate": "Перевод",
     "voice": "Озвучка",
     "mix": "Сведение",
@@ -914,13 +1252,14 @@ def plan_steps(data, which, targets=None):
     """[(key, target_or_None), ...] for a stage name; 'all' only does what is not done yet."""
     targets = [t for t in (targets or data["targets"]) if t in data["targets"]] or list(data["targets"])
     tracks = {t: track(data, t) for t in targets}
-    source_steps = [("extract", None), ("separate", None), ("transcribe", None), ("sample", None)]
+    source_steps = [("extract", None), ("separate", None), ("transcribe", None), ("diarize", None), ("sample", None)]
+    speaker_steps = [] if data.get("diarized") or not data.get("transcribed") else [("diarize", None), ("sample", None)]
     export_steps = lambda items: [step for t in items for step in (("mix", t), ("mux", t))]  # noqa: E731
     if which == "prepare":
         return source_steps + [("translate", t) for t in targets]
     if which == "translate":
         pending = [t for t in targets if not tracks[t]["translated"]] or targets
-        return [("translate", t) for t in pending]
+        return speaker_steps + [("translate", t) for t in pending]
     if which == "voice":
         return [("voice", t) for t in targets]
     if which == "export":
@@ -930,10 +1269,11 @@ def plan_steps(data, which, targets=None):
     if which == "revoice":
         return [("revoice", data["active"]), ("mix", data["active"]), ("mux", data["active"])]
     if which == "all":
-        steps = [] if data.get("transcribed") else list(source_steps)
-        steps += [("translate", t) for t in targets if not data.get("transcribed") or not tracks[t]["translated"]]
-        steps += [("voice", t) for t in targets if not tracks[t]["voiced"] or not data.get("transcribed")]
-        steps += export_steps([t for t in targets if not tracks[t]["exported"] or not data.get("transcribed")])
+        steps = speaker_steps if data.get("transcribed") else list(source_steps)
+        fresh = bool(steps)  # new phrases: everything after them is redone
+        steps += [("translate", t) for t in targets if fresh or not tracks[t]["translated"]]
+        steps += [("voice", t) for t in targets if fresh or not tracks[t]["voiced"]]
+        steps += export_steps([t for t in targets if fresh or not tracks[t]["exported"]])
         return steps
     raise ProjectError(f"Unknown stage: {which}")
 
@@ -970,7 +1310,7 @@ def run_stages(directory, which, ids=None, targets=None):
             stage(index, len(steps), label)
             item = track(data, target) if target else None
             if key == "extract":
-                data["transcribed"] = False
+                data["transcribed"] = data["diarized"] = False
                 for value in data["tracks"].values():
                     reset_track(value)
                 stage_extract(directory, data)
@@ -978,6 +1318,8 @@ def run_stages(directory, which, ids=None, targets=None):
                 stage_separate(directory, data, settings)
             elif key == "transcribe":
                 stage_transcribe(directory, data, settings)
+            elif key == "diarize":
+                stage_diarize(directory, data, settings)
             elif key == "sample":
                 stage_voice_sample(directory, data)
             elif key == "translate":
@@ -1028,6 +1370,7 @@ def main():
     create.add_argument("file")
     create.add_argument("--name", default="")
     create.add_argument("--target", action="append", default=[], help="Target language (repeat for several).")
+    create.add_argument("--speakers", type=int, default=1, help="1 = one voice, 0 = find the speakers, N = exactly N.")
     runner = sub.add_parser("run", help="Run stages of a project.")
     runner.add_argument("project", help="Project folder or id")
     runner.add_argument("stage", choices=STAGES)
@@ -1038,7 +1381,7 @@ def main():
 
     try:
         if args.command == "create":
-            directory, _ = create_from_file(args.file, args.name, args.target or ["English"])
+            directory, _ = create_from_file(args.file, args.name, args.target or ["English"], args.speakers)
             print(f"project={directory}")
         elif args.command == "run":
             directory = Path(args.project)

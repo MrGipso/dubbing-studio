@@ -8,7 +8,10 @@ Plan format: one JSON object per line
   {"id": "unit_0001", "text": "...", "duration": 2.4,
    "source_start": 0.0, "source_end": 2.4,
    "language_id": "en", "ref_audio": "voice.wav", "ref_text": "...",
-   "instruct": "...", "emotion": "calm"}
+   "speaker": "S1", "instruct": "...", "emotion": "calm"}
+
+With --voices, every speaker gets its own voice:
+  {"S1": {"ref_audio": "a.wav", "ref_text": "..."}, "S2": {"voice_id": "alloy"}}
 
 Examples:
   python dub.py outputs/x.en.dub.jsonl --engine omnivoice --auto-fit
@@ -252,8 +255,9 @@ def mix_segment(track, segment, start_sample):
 class Synthesizer:
     """Wraps an engine session: per-item voice/language, resampling, auto-fit."""
 
-    def __init__(self, session, manifest, args, work_dir):
+    def __init__(self, session, manifest, args, work_dir, voices=None):
         self.session = session
+        self.voices = voices or {}
         self.supports = manifest.get("supports") or {}
         self.args = args
         self.work_dir = work_dir
@@ -262,15 +266,22 @@ class Synthesizer:
         self.last_fit = {}
 
     def voice_for(self, item):
+        """--ref-audio for every line, else the speaker's voice, else the line's own reference."""
+        speaker = self.voices.get(str(item.get("speaker") or "S1")) or {}
+        if self.args.ref_audio:
+            ref_audio, ref_text = self.args.ref_audio, self.args.ref_text
+        elif speaker.get("ref_audio"):
+            ref_audio, ref_text = speaker["ref_audio"], speaker.get("ref_text")
+        else:
+            ref_audio, ref_text = item.get("ref_audio"), self.args.ref_text or item.get("ref_text")
         voice = {}
-        ref_audio = self.args.ref_audio or item.get("ref_audio")
-        ref_text = self.args.ref_text or item.get("ref_text")
         if ref_audio:
             voice["ref_audio"] = str(Path(ref_audio).resolve())
         if ref_text:
             voice["ref_text"] = ref_text
-        if self.args.voice_id:
-            voice["voice_id"] = self.args.voice_id
+        voice_id = self.args.voice_id or speaker.get("voice_id")
+        if voice_id:
+            voice["voice_id"] = voice_id
         return voice
 
     def synthesize(self, item, text, duration, speed):
@@ -351,6 +362,7 @@ def main():
     parser.add_argument("--ref-audio", default="", help="Override voice reference for every line.")
     parser.add_argument("--ref-text", default="", help="Transcript of --ref-audio.")
     parser.add_argument("--voice-id", default="", help="Voice name for engines with a voice list.")
+    parser.add_argument("--voices", default="", help='JSON file with a voice per speaker: {"S1": {"ref_audio": ..., "ref_text": ...}}.')
     parser.add_argument("--output", default="", help="Final WAV path")
     parser.add_argument("--segments-dir", default="", help="Directory for per-segment WAV files")
     parser.add_argument("--speed", type=float, default=1.0)
@@ -412,7 +424,8 @@ def main():
             print(f"Engine settings: {json.dumps(settings, ensure_ascii=False)}", flush=True)
             session = stack.enter_context(EngineSession(engine_id))
             session.load(settings, device)
-            synth = Synthesizer(session, manifest, args, Path(tmp))
+            voices = json.loads(Path(args.voices).read_text(encoding="utf-8")) if args.voices else {}
+            synth = Synthesizer(session, manifest, args, Path(tmp), voices)
             sample_rate = synth.sample_rate
             if not manifest.get("supports", {}).get("duration") and not args.natural_duration:
                 print("Engine has no duration control: phrases are generated naturally and fitted to their slots.", flush=True)
